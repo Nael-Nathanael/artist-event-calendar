@@ -95,9 +95,23 @@ export default function Home() {
   const [perCell, setPerCell] = useState(3);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  // Event id from a shared link, opened once its month's events arrive.
+  const [pendingEvent, setPendingEvent] = useState<string | null>(null);
 
   useEffect(() => {
-    setCurrentDate(new Date());
+    const q = new URLSearchParams(window.location.search);
+    const y = Number(q.get("year"));
+    const m = Number(q.get("month"));
+    setCurrentDate(
+      Number.isInteger(y) &&
+        y >= 1970 &&
+        Number.isInteger(m) &&
+        m >= 1 &&
+        m <= 12
+        ? new Date(y, m - 1, 1)
+        : new Date(),
+    );
+    setPendingEvent(q.get("event"));
     const onScroll = () => setScrolled(window.scrollY > 0);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -140,6 +154,24 @@ export default function Home() {
     fetchEvents();
     return () => controller.abort();
   }, [year, month, currentDate]);
+
+  useEffect(() => {
+    if (loading || !pendingEvent) return;
+    const shared = events.find((e) => e.id === pendingEvent);
+    setPendingEvent(null);
+    if (shared) setSelected(shared);
+  }, [events, loading, pendingEvent]);
+
+  // Keep the URL shareable: the visible month and the open event.
+  useEffect(() => {
+    if (!currentDate) return;
+    const q = new URLSearchParams(window.location.search);
+    q.set("year", String(year));
+    q.set("month", String(month + 1));
+    if (selected) q.set("event", selected.id);
+    else if (!pendingEvent) q.delete("event");
+    window.history.replaceState(null, "", `?${q}`);
+  }, [currentDate, year, month, selected, pendingEvent]);
 
   useEffect(() => {
     const d = dialogRef.current;
