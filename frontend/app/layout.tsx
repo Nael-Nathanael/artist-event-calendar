@@ -14,7 +14,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Artist Event Calendar",
-  description: "Aggregated calendar for concerts, festivals, and artist meetups.",
+  description:
+    "Aggregated calendar for concerts, festivals, and artist meetups.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

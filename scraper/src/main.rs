@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use reqwest::Client;
-use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::env;
 use uuid::Uuid;
@@ -78,25 +77,24 @@ struct ComifuroScraper;
 impl ScraperBase for ComifuroScraper {
     fn name(&self) -> &'static str { "Comifuro" }
     
-    async fn scrape(&self, client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
+    async fn scrape(&self, _client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
         // Here we would use `client.get("https://comifuro.net/").send().await?`
         // and parse it using `scraper::Html::parse_document(&text)`
         // For demonstration, we'll return a dynamically generated payload using the scraper's namespace.
         
-        let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
-        let event_name = "Comic Frontier 19";
-        let event_id = Uuid::new_v5(&namespace, event_name.as_bytes()).to_string();
+        let event_url = "https://comifuro.net";
+        let event_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, event_url.as_bytes()).to_string();
 
         let event = Event {
             id: event_id.clone(),
             series_id: None,
-            title: event_name.to_string(),
+            title: "Comic Frontier 19".to_string(),
             category: "Convention".to_string(),
             location_name: Some("ICE BSD".to_string()),
             location_city: Some("Tangerang".to_string()),
             floorplan_image_url: None,
             banner_image_url: None,
-            official_url: Some("https://comifuro.net".to_string()),
+            official_url: Some(event_url.to_string()),
             start_date: "2026-11-09T00:00:00Z".to_string(), // Future date for calendar
             end_date: "2026-11-10T23:59:59Z".to_string(),
         };
@@ -115,14 +113,13 @@ impl ScraperBase for PestaporaScraper {
     fn name(&self) -> &'static str { "Pestapora" }
     
     async fn scrape(&self, _client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
-        let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
-        let event_name = "Pestapora 2026";
-        let event_id = Uuid::new_v5(&namespace, event_name.as_bytes()).to_string();
+        let event_url = "https://pestapora.com/2026";
+        let event_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, event_url.as_bytes()).to_string();
 
         let event = Event {
             id: event_id.clone(),
             series_id: None,
-            title: event_name.to_string(),
+            title: "Pestapora 2026".to_string(),
             category: "MusicFestival".to_string(),
             location_name: Some("Gambir Expo".to_string()),
             location_city: Some("Jakarta".to_string()),
@@ -139,7 +136,7 @@ impl ScraperBase for PestaporaScraper {
         let mut event_artists = Vec::new();
 
         for name in artist_names {
-            let artist_id = Uuid::new_v5(&namespace, name.as_bytes()).to_string();
+            let artist_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, format!("artist:{}", name).as_bytes()).to_string();
             artists.push(Artist {
                 id: artist_id.clone(),
                 name: name.to_string(),

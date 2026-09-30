@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date\n        FROM events\n        WHERE start_date >= ? AND start_date <= ?\n        ORDER BY start_date ASC\n        ",
+  "query": "\n        SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date\n        FROM events\n        WHERE start_date < ? AND end_date >= ?\n        ORDER BY start_date ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -76,5 +76,5 @@
       false
     ]
   },
-  "hash": "e5fbd4a712219ebb20b0e05081d0b82a039bf6b88440b122413d33e479de1dd0"
+  "hash": "e3129004b26ff3d74e0f7c2649e1f3d03c5b6521f4fb52730a73fc67d88bac93"
 }

@@ -12,7 +12,6 @@ use tower_http::cors::CorsLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // --- Models ---
-// (Models stay the same)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Event {
     pub id: String,
@@ -87,11 +86,11 @@ async fn get_events(
         r#"
         SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date
         FROM events
-        WHERE start_date >= ? AND start_date <= ?
+        WHERE start_date < ? AND end_date >= ?
         ORDER BY start_date ASC
         "#,
-        from_date,
-        to_date
+        to_date,
+        from_date
     )
     .fetch_all(&state.db)
     .await
@@ -157,9 +156,7 @@ async fn ingest_batch(
         ).execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
 
-    // Upsert Artists (now gracefully handling name conflicts by ignoring if ID matches)
-    // Wait, the artist name is UNIQUE, so if the scraper sends a new ID for the same name, it conflicts.
-    // The scraper will use deterministic IDs based on name, so `id` will conflict first, resolving it.
+    // Upsert Artists
     for a in payload.artists {
         sqlx::query!(
             r#"
