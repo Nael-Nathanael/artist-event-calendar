@@ -200,7 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match run_all_scrapers(&client).await {
             Ok(payload) => {
                 tracing::info!("Batch scraping complete. Sending {} total events to backend...", payload.events.len());
-                let res = client.post(&format!("{}/api/internal/ingest/batch", backend_url))
+                let res = client.post(format!("{}/api/internal/ingest/batch", backend_url))
                     .bearer_auth(&api_key)
                     .json(&payload)
                     .send()
