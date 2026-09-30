@@ -59,6 +59,8 @@ pub struct IngestPayload {
     pub days: Vec<EventDay>,
     pub artists: Vec<Artist>,
     pub event_artists: Vec<(String, String)>, // event_id, artist_id
+    #[serde(default)]
+    pub merged_ids: Vec<String>, // duplicates now folded into another source's event
 }
 
 // --- App State ---
@@ -117,6 +119,11 @@ async fn ingest_batch(
     let mut tx = state.db.begin().await.map_err(|e| {
         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
     })?;
+
+    for id in payload.merged_ids {
+        sqlx::query!("DELETE FROM events WHERE id = ?", id)
+            .execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
 
     // Upsert Series
     for s in payload.series {

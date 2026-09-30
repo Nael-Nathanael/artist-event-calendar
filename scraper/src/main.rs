@@ -3,6 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 
+mod dedupe;
 mod scrapers;
 
 // --- Models ---
@@ -53,6 +54,8 @@ pub struct IngestPayload {
     pub days: Vec<EventDay>,
     pub artists: Vec<Artist>,
     pub event_artists: Vec<(String, String)>,
+    /// Ids of events folded into another source's listing; the backend deletes them.
+    pub merged_ids: Vec<String>,
 }
 
 impl IngestPayload {
@@ -62,6 +65,7 @@ impl IngestPayload {
         self.days.extend(other.days);
         self.artists.extend(other.artists);
         self.event_artists.extend(other.event_artists);
+        self.merged_ids.extend(other.merged_ids);
     }
 }
 
@@ -97,6 +101,7 @@ async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std:
         }
     }
 
+    dedupe::merge_duplicates(&mut master_payload);
     Ok(master_payload)
 }
 

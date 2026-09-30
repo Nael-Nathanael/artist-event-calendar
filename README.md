@@ -58,6 +58,7 @@ Each source lives in its own module under `scraper/src/scrapers/` and is registe
 - **JIExpo** (`jiexpo.rs`): calls the EventON AJAX endpoint behind https://exhibition.jiexpo.com/event-directory/ for everything from 2026-10-01 up to three years out. Categories come from the WP REST `event_type` of each event.
 - **Eventfest** (`eventfest.rs`): the same EventON endpoint behind https://eventfest.id/kalender-event/, from 2026-10-01. Category is the `event_type` term, city the `event_type_2` term. Shared EventON code lives in `eventon.rs`.
 - **RuangCosplay** (`ruangcosplay.rs`): reads the list at https://ruangcosplay.com/event, then each event page's JSON-LD, description and source link. Keeps events starting on or after 2026-10-01, category `Cosplay`.
+- **Duplicates** (`scraper/src/dedupe.rs`): events from different sources that start the same day merge when their titles are close, or when their venues overlap and the titles are loosely alike. The earlier source in `run_all_scrapers` wins and takes the others' missing fields. Artist appearances never merge. Absorbed ids go to the backend as `merged_ids`, which deletes them.
 - Every source runs once per hour. The scraper loops with a one-hour sleep, not cron, and runs immediately on each container start.
 
 ## System Design Details
