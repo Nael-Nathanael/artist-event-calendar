@@ -1,6 +1,8 @@
 //! The same event listed by several sources collapses into one record.
 //! Two events match when they start the same day and either their titles are close,
-//! or their venues share most words and the titles are at least loosely alike.
+//! or their venues share most words and the titles are at least loosely alike. The venue
+//! rule only applies when neither source lists another event at that venue that day:
+//! co-located trade shows ("INDO WATER" and "INDO FIREX" in one hall) stay apart.
 //! The earliest-registered source wins; its empty fields are filled from the others.
 //! Absorbed events drop out of the batch, so the backend deletes their rows.
 //! An artist's appearance at a listed event then joins that event's line-up.
@@ -45,12 +47,17 @@ fn same_day(a: &Event, b: &Event) -> bool {
     a.start_date.get(..10) == b.start_date.get(..10)
 }
 
-fn same_event(a: &Event, b: &Event) -> bool {
+fn same_place(a: &Event, b: &Event) -> bool {
+    same_day(a, b) && same_venue(a.location_name.as_deref(), b.location_name.as_deref())
+}
+
+/// `alone`: neither event has a same-source neighbour at its venue that day.
+fn same_event(a: &Event, b: &Event, alone: bool) -> bool {
     if !same_day(a, b) {
         return false;
     }
     let t = dice(&a.title, &b.title);
-    t >= CLOSE_TITLE || (t >= LOOSE_TITLE && same_venue(a.location_name.as_deref(), b.location_name.as_deref()))
+    t >= CLOSE_TITLE || (alone && t >= LOOSE_TITLE && same_place(a, b))
 }
 
 fn fill(w: &mut Event, l: Event) {
@@ -80,12 +87,15 @@ pub fn merge_duplicates(payload: &mut IngestPayload) {
         root[i] = r;
         r
     }
+    let alone: Vec<bool> = (0..n)
+        .map(|i| !(0..n).any(|j| j != i && events[j].source == events[i].source && same_place(&events[i], &events[j])))
+        .collect();
     for i in 0..n {
         if with_artists.contains(events[i].id.as_str()) {
             continue;
         }
         for j in i + 1..n {
-            if !with_artists.contains(events[j].id.as_str()) && same_event(&events[i], &events[j]) {
+            if !with_artists.contains(events[j].id.as_str()) && same_event(&events[i], &events[j], alone[i] && alone[j]) {
                 let (ri, rj) = (find(&mut root, i), find(&mut root, j));
                 root[ri.max(rj)] = ri.min(rj);
             }
@@ -162,7 +172,7 @@ mod tests {
             end_date: format!("{start}T23:59:59+07:00"),
             description: description.map(str::to_string),
             organizer: None,
-            source: String::new(),
+            source: id.split('-').next().unwrap().to_string(),
         }
     }
 
@@ -208,6 +218,26 @@ mod tests {
         };
         merge_duplicates(&mut p);
         assert_eq!(p.events.len(), 8, "appearances are not duplicates");
+    }
+
+    // Co-located shows from the live JIExpo and eventseye listings.
+    #[test]
+    fn keeps_co_located_trade_shows_apart() {
+        let jx = "Jakarta International Expo (JIExpo)";
+        let mut p = IngestPayload {
+            events: vec![
+                ev("jiexpo-mi", "Manufacturing Indonesia 2026", "2026-12-02", Some("JIExpo Kemayoran — Hall A, B, C, D"), None),
+                ev("eye-mi", "MANUFACTURING INDONESIA", "2026-12-02", Some(jx), None),
+                ev("eye-mt", "MACHINE TOOL INDONESIA", "2026-12-02", Some(jx), None),
+                ev("eye-firex", "INDO FIREX", "2026-10-21", Some(jx), None),
+                ev("eye-water", "INDO WATER EXPO & FORUM", "2026-10-21", Some(jx), None),
+                ev("eye-waste", "INDO WASTE & RECYCLING", "2026-10-21", Some(jx), None),
+            ],
+            ..Default::default()
+        };
+        merge_duplicates(&mut p);
+        let ids: Vec<_> = p.events.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec!["jiexpo-mi", "eye-mt", "eye-firex", "eye-water", "eye-waste"]);
     }
 
     fn link(event_id: &str, role: Option<&str>) -> EventArtist {
