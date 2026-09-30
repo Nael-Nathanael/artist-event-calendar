@@ -62,10 +62,8 @@ export default function Home() {
         const fromEncoded = encodeURIComponent(fromStr);
         const toEncoded = encodeURIComponent(toStr);
 
-        const backendUrl =
-          process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8081";
         const res = await fetch(
-          `${backendUrl}/api/events?from=${fromEncoded}&to=${toEncoded}`,
+          `/api/events?from=${fromEncoded}&to=${toEncoded}`,
           { signal },
         );
 

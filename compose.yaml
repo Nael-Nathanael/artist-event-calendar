@@ -1,0 +1,57 @@
+# event-calendar.miraestudio.id on cyrene, via the host cloudflared tunnel -> 127.0.0.1:3105.
+# Deploy: `git pull && docker compose up -d --build`. API_KEY lives in .env.
+name: event-calendar
+
+x-limits: &limits
+  restart: unless-stopped
+  cgroup_parent: demos.slice
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: "3" }
+
+services:
+  backend:
+    <<: *limits
+    build: ./backend
+    user: "1000:1000"
+    environment:
+      DATABASE_URL: sqlite:///data/events.db
+      API_KEY: ${API_KEY:?set API_KEY in .env}
+      RUST_LOG: backend=info,tower_http=info
+    volumes:
+      - ./data:/data
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+
+  scraper:
+    <<: *limits
+    build: ./scraper
+    depends_on: [backend]
+    environment:
+      BACKEND_URL: http://backend:8081
+      API_KEY: ${API_KEY:?set API_KEY in .env}
+      RUST_LOG: info
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+
+  web:
+    <<: *limits
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8081
+    depends_on: [backend]
+    ports:
+      - 127.0.0.1:3105:3000
+    environment:
+      NODE_OPTIONS: --max-old-space-size=192
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))"]
+      interval: 60s
+      timeout: 5s
+      start_period: 20s
