@@ -16,7 +16,7 @@ type Event = {
 
 async function getEvents(): Promise<Event[]> {
   try {
-    const res = await fetch('http://127.0.0.1:8080/api/events', {
+    const res = await fetch('http://127.0.0.1:8081/api/events', {
       next: { revalidate: 60 }, // ISR: Revalidate every 60 seconds
     });
     if (!res.ok) {

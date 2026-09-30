@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let backend_url = env::var("BACKEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+    let backend_url = env::var("BACKEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
     
     loop {
         match run_scrapers().await {
