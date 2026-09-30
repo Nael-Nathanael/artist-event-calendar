@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
-use uuid::Uuid;
 
 mod scrapers;
 
@@ -73,101 +72,10 @@ pub trait ScraperBase: Send + Sync {
     fn name(&self) -> &'static str;
 }
 
-// --- Scraper Implementations ---
-
-/// Comifuro Scraper (Mock implementation representing parsing comifuro.net)
-struct ComifuroScraper;
-#[async_trait]
-impl ScraperBase for ComifuroScraper {
-    fn name(&self) -> &'static str { "Comifuro" }
-    
-    async fn scrape(&self, _client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
-        // Here we would use `client.get("https://comifuro.net/").send().await?`
-        // and parse it using `scraper::Html::parse_document(&text)`
-        // For demonstration, we'll return a dynamically generated payload using the scraper's namespace.
-        
-        let event_url = "https://comifuro.net";
-        let event_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, event_url.as_bytes()).to_string();
-
-        let event = Event {
-            id: event_id.clone(),
-            series_id: None,
-            title: "Comic Frontier 19".to_string(),
-            category: "Convention".to_string(),
-            location_name: Some("ICE BSD".to_string()),
-            location_city: Some("Tangerang".to_string()),
-            floorplan_image_url: None,
-            banner_image_url: None,
-            official_url: Some(event_url.to_string()),
-            start_date: "2026-11-09T00:00:00+07:00".to_string(), // Future date for calendar
-            end_date: "2026-11-10T23:59:59+07:00".to_string(),
-            description: None,
-            organizer: None,
-        };
-
-        let mut payload = IngestPayload::default();
-        payload.events.push(event);
-        
-        Ok(payload)
-    }
-}
-
-/// Pestapora Scraper
-struct PestaporaScraper;
-#[async_trait]
-impl ScraperBase for PestaporaScraper {
-    fn name(&self) -> &'static str { "Pestapora" }
-    
-    async fn scrape(&self, _client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
-        let event_url = "https://pestapora.com/2026";
-        let event_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, event_url.as_bytes()).to_string();
-
-        let event = Event {
-            id: event_id.clone(),
-            series_id: None,
-            title: "Pestapora 2026".to_string(),
-            category: "MusicFestival".to_string(),
-            location_name: Some("Gambir Expo".to_string()),
-            location_city: Some("Jakarta".to_string()),
-            floorplan_image_url: None,
-            banner_image_url: None,
-            official_url: Some("https://pestapora.com".to_string()),
-            start_date: "2026-10-25T00:00:00+07:00".to_string(),
-            end_date: "2026-10-27T23:59:59+07:00".to_string(),
-            description: None,
-            organizer: None,
-        };
-
-        // Add some artists
-        let artist_names = ["Hindia", "Tulus", "Maliq & D'Essentials"];
-        let mut artists = Vec::new();
-        let mut event_artists = Vec::new();
-
-        for name in artist_names {
-            let artist_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, format!("artist:{}", name).as_bytes()).to_string();
-            artists.push(Artist {
-                id: artist_id.clone(),
-                name: name.to_string(),
-                profile_image_url: None,
-            });
-            event_artists.push((event_id.clone(), artist_id));
-        }
-
-        let mut payload = IngestPayload::default();
-        payload.events.push(event);
-        payload.artists = artists;
-        payload.event_artists = event_artists;
-        
-        Ok(payload)
-    }
-}
-
 // --- Main Worker Loop ---
 
 async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
     let scrapers: Vec<Box<dyn ScraperBase>> = vec![
-        Box::new(ComifuroScraper),
-        Box::new(PestaporaScraper),
         Box::new(scrapers::punipun::PunipunScraper),
         Box::new(scrapers::jiexpo::JiexpoScraper),
     ];
