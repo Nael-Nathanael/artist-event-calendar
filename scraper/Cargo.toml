@@ -1,5 +1,5 @@
 [package]
-name = "scraper"
+name = "event_scraper"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,3 +13,6 @@ uuid = { version = "1.10", features = ["serde", "v4", "v5"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"
+scraper = "0.27.0"
+select = "0.6.1"
+async-trait = "0.1.92"
