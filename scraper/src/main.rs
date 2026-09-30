@@ -78,6 +78,7 @@ async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std:
     let scrapers: Vec<Box<dyn ScraperBase>> = vec![
         Box::new(scrapers::punipun::PunipunScraper),
         Box::new(scrapers::jiexpo::JiexpoScraper),
+        Box::new(scrapers::ruangcosplay::RuangCosplayScraper),
     ];
 
     let mut master_payload = IngestPayload::default();

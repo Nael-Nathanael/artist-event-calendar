@@ -56,6 +56,7 @@ git pull && docker compose up -d --build   # API_KEY lives in .env
 Each source lives in its own module under `scraper/src/scrapers/` and is registered in `run_all_scrapers`.
 - **Punipun** (`punipun.rs`): parses https://punipun.com/events/ and keeps events starting on or after 2026-10-01.
 - **JIExpo** (`jiexpo.rs`): calls the EventON AJAX endpoint behind https://exhibition.jiexpo.com/event-directory/ for everything from 2026-10-01 up to three years out. Categories come from the WP REST `event_type` of each event.
+- **RuangCosplay** (`ruangcosplay.rs`): reads the list at https://ruangcosplay.com/event, then each event page's JSON-LD, description and source link. Keeps events starting on or after 2026-10-01, category `Cosplay`.
 - Every source runs once per hour. The scraper loops with a one-hour sleep, not cron, and runs immediately on each container start.
 
 ## System Design Details
