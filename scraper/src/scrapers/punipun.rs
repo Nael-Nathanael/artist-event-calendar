@@ -9,7 +9,7 @@ use reqwest::Client;
 use scraper::{Html, Selector};
 use uuid::Uuid;
 
-use crate::{Artist, Event, IngestPayload, ScraperBase};
+use crate::{Artist, Event, EventArtist, IngestPayload, ScraperBase};
 
 const URL: &str = "https://punipun.com/events/";
 const ARTIST: &str = "Clarissa Punipun";
@@ -101,13 +101,23 @@ fn parse(html: &str, since: NaiveDate) -> IngestPayload {
                 (Some(v), Some(t)) if !v.is_empty() => (t.trim(), Some(v.to_string())),
                 _ => (rest, None),
             };
+            // "Guest Cosplayer at Itasha Domei" -> "Guest Cosplayer", shown if this joins Itasha Domei's line-up.
+            let role = title
+                .rsplit_once(" at ")
+                .map(|(r, _)| r.trim_start_matches("Punipun").trim_start_matches(':').trim().to_string())
+                .filter(|r| !r.is_empty());
             let title = if title.contains("Punipun") { title.to_string() } else { format!("Punipun: {title}") };
 
             let frag = Html::parse_fragment(chunk);
             let link = frag.select(&href).next().and_then(|a| a.value().attr("href")).unwrap_or(URL);
 
             let id = uuid(&format!("punipun:{start}:{title}"));
-            payload.event_artists.push((id.clone(), artist_id.clone()));
+            payload.event_artists.push(EventArtist {
+                event_id: id.clone(),
+                artist_id: artist_id.clone(),
+                role,
+                source: String::new(),
+            });
             payload.events.push(Event {
                 id,
                 series_id: None,
@@ -122,6 +132,7 @@ fn parse(html: &str, since: NaiveDate) -> IngestPayload {
                 end_date: format!("{end}T23:59:59+07:00"),
                 description: None,
                 organizer: None,
+                source: String::new(),
             });
         }
     }
@@ -157,6 +168,16 @@ mod tests {
             ]
         );
         assert_eq!(p.events[1].official_url.as_deref(), Some("https://www.instagram.com/p/DbFv7cuxmia/"));
-        assert_eq!(p.event_artists.len(), 5);
+        let roles: Vec<_> = p.event_artists.iter().map(|l| l.role.as_deref()).collect();
+        assert_eq!(
+            roles,
+            vec![
+                None,
+                Some("Guest Cosplayer"),
+                None,
+                Some("Booth & Special Performance"),
+                Some("[Booth AH21-22] Punipun x Koko Baju Bolong x MatchaMei Booth"),
+            ]
+        );
     }
 }

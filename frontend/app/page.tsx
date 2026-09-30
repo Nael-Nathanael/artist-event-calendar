@@ -17,6 +17,7 @@ type Event = {
   end_date: string;
   description: string | null;
   organizer: string | null;
+  artists: { name: string; role: string | null }[];
 };
 
 const TZ = "Asia/Jakarta";
@@ -443,6 +444,15 @@ export default function Home() {
                   {selected.organizer}
                 </p>
               )}
+              {selected.artists.map((a) => (
+                <p key={a.name} className="flex items-start gap-3">
+                  <Icon name="person" size={20} />
+                  <span>
+                    <span className="text-on-surface">{a.name}</span>
+                    {a.role && ` · ${a.role}`}
+                  </span>
+                </p>
+              ))}
             </div>
             {selected.description && (
               <p className="mt-4 whitespace-pre-line break-words body-medium text-on-surface">

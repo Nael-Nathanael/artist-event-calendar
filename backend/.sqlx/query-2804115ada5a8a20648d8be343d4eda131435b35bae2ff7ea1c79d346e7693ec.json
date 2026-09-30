@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM event_artists WHERE source = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "2804115ada5a8a20648d8be343d4eda131435b35bae2ff7ea1c79d346e7693ec"
+}

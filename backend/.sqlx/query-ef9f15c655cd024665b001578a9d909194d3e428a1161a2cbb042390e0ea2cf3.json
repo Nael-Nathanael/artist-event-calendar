@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM events WHERE source = ? AND id NOT IN (SELECT value FROM json_each(?))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "ef9f15c655cd024665b001578a9d909194d3e428a1161a2cbb042390e0ea2cf3"
+}

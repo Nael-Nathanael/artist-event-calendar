@@ -22,6 +22,18 @@ pub struct Event {
     pub end_date: String,
     pub description: Option<String>,
     pub organizer: Option<String>,
+    /// Name of the scraper that produced it; `run_all_scrapers` fills it in.
+    pub source: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EventArtist {
+    pub event_id: String,
+    pub artist_id: String,
+    /// What the artist does there, e.g. "Guest Cosplayer".
+    pub role: Option<String>,
+    /// Name of the scraper that produced it; `run_all_scrapers` fills it in.
+    pub source: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,19 +65,22 @@ pub struct IngestPayload {
     pub events: Vec<Event>,
     pub days: Vec<EventDay>,
     pub artists: Vec<Artist>,
-    pub event_artists: Vec<(String, String)>,
-    /// Ids of events folded into another source's listing; the backend deletes them.
-    pub merged_ids: Vec<String>,
+    pub event_artists: Vec<EventArtist>,
+    /// Scrapers that succeeded this run. The backend treats their events and
+    /// line-ups in this batch as complete and deletes their rows missing from it.
+    pub sources: Vec<String>,
 }
 
 impl IngestPayload {
-    fn merge(&mut self, other: IngestPayload) {
+    fn merge(&mut self, source: &str, mut other: IngestPayload) {
+        other.events.iter_mut().for_each(|e| e.source = source.to_string());
+        other.event_artists.iter_mut().for_each(|l| l.source = source.to_string());
         self.series.extend(other.series);
         self.events.extend(other.events);
         self.days.extend(other.days);
         self.artists.extend(other.artists);
         self.event_artists.extend(other.event_artists);
-        self.merged_ids.extend(other.merged_ids);
+        self.sources.push(source.to_string());
     }
 }
 
@@ -93,7 +108,7 @@ async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std:
         match scraper.scrape(client).await {
             Ok(payload) => {
                 tracing::info!("{} returned {} events", scraper.name(), payload.events.len());
-                master_payload.merge(payload);
+                master_payload.merge(scraper.name(), payload);
             }
             Err(e) => {
                 tracing::error!("Scraper {} failed: {}", scraper.name(), e);
@@ -102,6 +117,7 @@ async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std:
     }
 
     dedupe::merge_duplicates(&mut master_payload);
+    dedupe::attach_appearances(&mut master_payload);
     Ok(master_payload)
 }
 

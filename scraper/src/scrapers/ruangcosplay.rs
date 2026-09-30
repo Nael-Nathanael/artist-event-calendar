@@ -155,6 +155,7 @@ fn parse(url: &str, html: &str, since: NaiveDate) -> Result<Option<Event>, Box<d
         end_date: format!("{end}T23:59:59+07:00"),
         description,
         organizer: non_empty(ld.organizer.and_then(|o| o.name)),
+        source: String::new(),
     }))
 }
 

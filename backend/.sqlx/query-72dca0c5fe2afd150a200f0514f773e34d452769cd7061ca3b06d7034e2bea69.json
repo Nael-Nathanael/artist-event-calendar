@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM events WHERE source IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "72dca0c5fe2afd150a200f0514f773e34d452769cd7061ca3b06d7034e2bea69"
+}

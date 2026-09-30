@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions}, SqlitePool};
-use std::{env, net::SocketAddr, sync::Arc, str::FromStr};
+use std::{collections::HashMap, env, net::SocketAddr, sync::Arc, str::FromStr};
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -27,6 +27,34 @@ pub struct Event {
     pub end_date: String,
     pub description: Option<String>,
     pub organizer: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IngestEvent {
+    #[serde(flatten)]
+    pub event: Event,
+    pub source: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Lineup {
+    pub name: String,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EventView {
+    #[serde(flatten)]
+    pub event: Event,
+    pub artists: Vec<Lineup>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EventArtist {
+    pub event_id: String,
+    pub artist_id: String,
+    pub role: Option<String>,
+    pub source: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -52,15 +80,15 @@ pub struct EventSeries {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct IngestPayload {
     pub series: Vec<EventSeries>,
-    pub events: Vec<Event>,
+    pub events: Vec<IngestEvent>,
     pub days: Vec<EventDay>,
     pub artists: Vec<Artist>,
-    pub event_artists: Vec<(String, String)>, // event_id, artist_id
-    #[serde(default)]
-    pub merged_ids: Vec<String>, // duplicates now folded into another source's event
+    pub event_artists: Vec<EventArtist>,
+    /// Scrapers that succeeded this run: their events and line-ups here are complete.
+    pub sources: Vec<String>,
 }
 
 // --- App State ---
@@ -81,7 +109,7 @@ struct EventParams {
 async fn get_events(
     State(state): State<Arc<AppState>>,
     Query(params): Query<EventParams>,
-) -> Result<Json<Vec<Event>>, (StatusCode, String)> {
+) -> Result<Json<Vec<EventView>>, (StatusCode, String)> {
     let from_date = params.from.unwrap_or_else(|| "1970-01-01".to_string());
     let to_date = params.to.unwrap_or_else(|| "9999-12-31".to_string());
 
@@ -98,12 +126,38 @@ async fn get_events(
     )
     .fetch_all(&state.db)
     .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch events".to_string())
-    })?;
+    .map_err(db_error)?;
 
-    Ok(Json(events))
+    let links = sqlx::query!(
+        r#"
+        SELECT ea.event_id AS "event_id!", a.name, ea.role
+        FROM event_artists ea
+        JOIN artists a ON a.id = ea.artist_id
+        JOIN events e ON e.id = ea.event_id
+        WHERE e.start_date < ? AND e.end_date >= ?
+        ORDER BY a.name
+        "#,
+        to_date,
+        from_date
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(db_error)?;
+
+    let mut lineups: HashMap<String, Vec<Lineup>> = HashMap::new();
+    for l in links {
+        lineups.entry(l.event_id).or_default().push(Lineup { name: l.name, role: l.role });
+    }
+    let views = events
+        .into_iter()
+        .map(|event| EventView { artists: lineups.remove(&event.id).unwrap_or_default(), event })
+        .collect();
+    Ok(Json(views))
+}
+
+fn db_error(e: sqlx::Error) -> (StatusCode, String) {
+    tracing::error!("Database error: {}", e);
+    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch events".to_string())
 }
 
 async fn ingest_batch(
@@ -120,10 +174,8 @@ async fn ingest_batch(
         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
     })?;
 
-    for id in payload.merged_ids {
-        sqlx::query!("DELETE FROM events WHERE id = ?", id)
-            .execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    }
+    let batch_ids = serde_json::to_string(&payload.events.iter().map(|e| &e.event.id).collect::<Vec<_>>())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Upsert Series
     for s in payload.series {
@@ -138,21 +190,32 @@ async fn ingest_batch(
     }
 
     // Upsert Events
-    for e in payload.events {
+    for IngestEvent { event: e, source } in payload.events {
         sqlx::query!(
             r#"
-            INSERT INTO events (id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date, description, organizer)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO events (id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date, description, organizer, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 series_id=excluded.series_id, title=excluded.title, category=excluded.category,
                 location_name=excluded.location_name, location_city=excluded.location_city,
                 floorplan_image_url=excluded.floorplan_image_url, banner_image_url=excluded.banner_image_url,
                 official_url=excluded.official_url, start_date=excluded.start_date, end_date=excluded.end_date,
-                description=excluded.description, organizer=excluded.organizer
+                description=excluded.description, organizer=excluded.organizer, source=excluded.source
             "#,
-            e.id, e.series_id, e.title, e.category, e.location_name, e.location_city, e.floorplan_image_url, e.banner_image_url, e.official_url, e.start_date, e.end_date, e.description, e.organizer
+            e.id, e.series_id, e.title, e.category, e.location_name, e.location_city, e.floorplan_image_url, e.banner_image_url, e.official_url, e.start_date, e.end_date, e.description, e.organizer, source
         ).execute(&mut *tx).await.map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
     }
+
+    // A source that succeeded no longer lists its events missing from this batch (dropped by the
+    // site, or merged into another source's listing). Rows from before sources were tracked have none.
+    for s in &payload.sources {
+        sqlx::query!(
+            "DELETE FROM events WHERE source = ? AND id NOT IN (SELECT value FROM json_each(?))",
+            s, batch_ids
+        ).execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    sqlx::query!("DELETE FROM events WHERE source IS NULL")
+        .execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Upsert Days
     for d in payload.days {
@@ -178,15 +241,21 @@ async fn ingest_batch(
         ).execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
 
-    // Insert Event-Artists (ignore conflicts)
-    for (event_id, artist_id) in payload.event_artists {
+    // Line-ups from sources that succeeded are replaced wholesale.
+    for s in &payload.sources {
+        sqlx::query!("DELETE FROM event_artists WHERE source = ?", s)
+            .execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    sqlx::query!("DELETE FROM event_artists WHERE source IS NULL")
+        .execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    for l in payload.event_artists {
         sqlx::query!(
             r#"
-            INSERT INTO event_artists (event_id, artist_id)
-            VALUES (?, ?)
-            ON CONFLICT(event_id, artist_id) DO NOTHING
+            INSERT INTO event_artists (event_id, artist_id, role, source)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(event_id, artist_id) DO UPDATE SET role=excluded.role, source=excluded.source
             "#,
-            event_id, artist_id
+            l.event_id, l.artist_id, l.role, l.source
         ).execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
 

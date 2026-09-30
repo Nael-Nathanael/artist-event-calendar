@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO event_artists (event_id, artist_id, role, source)\n            VALUES (?, ?, ?, ?)\n            ON CONFLICT(event_id, artist_id) DO UPDATE SET role=excluded.role, source=excluded.source\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "619f68bd96ba6bab28ce3d4cfd2b61070e636fea8d6fc251029f8cdc65b19bd0"
+}

@@ -83,6 +83,7 @@ fn parse(
             official_url: row.and_then(|r| r.url.clone()),
             start_date: eventon::iso(start),
             end_date: eventon::iso(end),
+            source: String::new(),
         });
     }
     payload

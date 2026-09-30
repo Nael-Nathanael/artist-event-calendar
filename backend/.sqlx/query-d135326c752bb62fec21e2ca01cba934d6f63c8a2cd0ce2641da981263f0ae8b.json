@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT ea.event_id AS \"event_id!\", a.name, ea.role\n        FROM event_artists ea\n        JOIN artists a ON a.id = ea.artist_id\n        JOIN events e ON e.id = ea.event_id\n        WHERE e.start_date < ? AND e.end_date >= ?\n        ORDER BY a.name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "event_id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "role",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "d135326c752bb62fec21e2ca01cba934d6f63c8a2cd0ce2641da981263f0ae8b"
+}
