@@ -1,26 +1,199 @@
 @import "tailwindcss";
 
+/* Material 3 baseline scheme (seed #6750A4, tonal spot), from @material/material-color-utilities. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light dark;
+  --md-sys-color-primary: light-dark(#65558f, #cfbdfe);
+  --md-sys-color-on-primary: light-dark(#ffffff, #36275d);
+  --md-sys-color-primary-container: light-dark(#e9ddff, #4d3d75);
+  --md-sys-color-on-primary-container: light-dark(#4d3d75, #e9ddff);
+  --md-sys-color-secondary-container: light-dark(#e8def8, #4a4458);
+  --md-sys-color-on-secondary-container: light-dark(#4a4458, #e8def8);
+  --md-sys-color-error: light-dark(#ba1a1a, #ffb4ab);
+  --md-sys-color-surface: light-dark(#fdf7ff, #141218);
+  --md-sys-color-on-surface: light-dark(#1d1b20, #e6e0e9);
+  --md-sys-color-on-surface-variant: light-dark(#49454e, #cac4cf);
+  --md-sys-color-surface-container-low: light-dark(#f8f2fa, #1d1b20);
+  --md-sys-color-surface-container: light-dark(#f2ecf4, #211f24);
+  --md-sys-color-surface-container-high: light-dark(#ece6ee, #2b292f);
+  --md-sys-color-outline: light-dark(#7a757f, #948f99);
+  --md-sys-color-outline-variant: light-dark(#cac4cf, #49454e);
+  --md-sys-color-scrim: #000000;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-primary: var(--md-sys-color-primary);
+  --color-on-primary: var(--md-sys-color-on-primary);
+  --color-primary-container: var(--md-sys-color-primary-container);
+  --color-on-primary-container: var(--md-sys-color-on-primary-container);
+  --color-secondary-container: var(--md-sys-color-secondary-container);
+  --color-on-secondary-container: var(--md-sys-color-on-secondary-container);
+  --color-error: var(--md-sys-color-error);
+  --color-surface: var(--md-sys-color-surface);
+  --color-on-surface: var(--md-sys-color-on-surface);
+  --color-on-surface-variant: var(--md-sys-color-on-surface-variant);
+  --color-surface-container-low: var(--md-sys-color-surface-container-low);
+  --color-surface-container: var(--md-sys-color-surface-container);
+  --color-surface-container-high: var(--md-sys-color-surface-container-high);
+  --color-outline: var(--md-sys-color-outline);
+  --color-outline-variant: var(--md-sys-color-outline-variant);
+  --color-scrim: var(--md-sys-color-scrim);
+
+  --font-sans: var(--font-roboto);
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --breakpoint-medium: 600px;
+  --breakpoint-expanded: 840px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* M3 type scale */
+@utility headline-small {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 400;
+}
+@utility title-large {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 400;
+}
+@utility title-medium {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  letter-spacing: 0.15px;
+}
+@utility title-small {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+@utility body-large {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+@utility body-medium {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0.25px;
+}
+@utility label-large {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+@utility label-medium {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+/* State layer: hover 8%, focus/pressed 10% of the content color. */
+@utility state-layer {
+  position: relative;
+  isolation: isolate;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity 200ms var(--ease-standard);
+  }
+  &:hover::before {
+    opacity: 0.08;
+  }
+  &:focus-visible::before,
+  &:active::before {
+    opacity: 0.1;
+  }
+  &:focus-visible {
+    outline: 3px solid var(--md-sys-color-secondary-container);
+    outline-offset: 2px;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.32);
+}
+
+/* Indeterminate linear progress: primary indicator, secondary-container track, 4dp gap.
+   Static full-width indicator when reduced motion is requested. */
+.linear-progress::before,
+.linear-progress::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  border-radius: 9999px;
+}
+.linear-progress::before {
+  inset-inline: 0;
+  background: var(--md-sys-color-primary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog[open] {
+    animation: dialog-in 300ms var(--ease-standard);
+  }
+  .linear-progress::before {
+    animation: lp-indicator 1.8s var(--ease-standard) infinite;
+  }
+  .linear-progress::after {
+    background: var(--md-sys-color-secondary-container);
+    animation: lp-track 1.8s var(--ease-standard) infinite;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+@keyframes lp-indicator {
+  0% {
+    left: 0;
+    right: 100%;
+  }
+  60% {
+    left: 0;
+    right: 40%;
+  }
+  100% {
+    left: 100%;
+    right: 0;
+  }
+}
+@keyframes lp-track {
+  0% {
+    left: 4px;
+    right: 0;
+  }
+  60% {
+    left: calc(60% + 4px);
+    right: 0;
+  }
+  100% {
+    left: 100%;
+    right: 0;
+  }
 }

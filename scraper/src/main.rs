@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use uuid::Uuid;
 
+mod scrapers;
+
 // --- Models ---
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Event {
@@ -95,8 +97,8 @@ impl ScraperBase for ComifuroScraper {
             floorplan_image_url: None,
             banner_image_url: None,
             official_url: Some(event_url.to_string()),
-            start_date: "2026-11-09T00:00:00Z".to_string(), // Future date for calendar
-            end_date: "2026-11-10T23:59:59Z".to_string(),
+            start_date: "2026-11-09T00:00:00+07:00".to_string(), // Future date for calendar
+            end_date: "2026-11-10T23:59:59+07:00".to_string(),
         };
 
         let mut payload = IngestPayload::default();
@@ -126,8 +128,8 @@ impl ScraperBase for PestaporaScraper {
             floorplan_image_url: None,
             banner_image_url: None,
             official_url: Some("https://pestapora.com".to_string()),
-            start_date: "2026-10-25T00:00:00Z".to_string(),
-            end_date: "2026-10-27T23:59:59Z".to_string(),
+            start_date: "2026-10-25T00:00:00+07:00".to_string(),
+            end_date: "2026-10-27T23:59:59+07:00".to_string(),
         };
 
         // Add some artists
@@ -160,6 +162,8 @@ async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std:
     let scrapers: Vec<Box<dyn ScraperBase>> = vec![
         Box::new(ComifuroScraper),
         Box::new(PestaporaScraper),
+        Box::new(scrapers::punipun::PunipunScraper),
+        Box::new(scrapers::jiexpo::JiexpoScraper),
     ];
 
     let mut master_payload = IngestPayload::default();
@@ -197,7 +201,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match run_all_scrapers(&client).await {
             Ok(payload) => {
                 tracing::info!("Batch scraping complete. Sending {} total events to backend...", payload.events.len());
-                let res = client.post(&format!("{}/api/internal/ingest/batch", backend_url))
+                let res = client.post(format!("{}/api/internal/ingest/batch", backend_url))
                     .bearer_auth(&api_key)
                     .json(&payload)
                     .send()

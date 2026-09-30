@@ -42,7 +42,21 @@ cd frontend
 bun install
 bun run dev
 ```
-The frontend will run on `http://localhost:3000`.
+The frontend will run on `http://localhost:3000`. It proxies `/api/events` to `BACKEND_URL` (default `http://127.0.0.1:8081`).
+
+## Deploy
+Production runs on `cyrene` at https://event-calendar.miraestudio.id from `~/apps/event-calendar` (a clone of this repo). `compose.yaml` runs backend, scraper and web; web binds `127.0.0.1:3105`, which the host cloudflared tunnel serves. The ingest endpoint is not exposed publicly.
+
+```bash
+cd ~/apps/event-calendar
+git pull && docker compose up -d --build   # API_KEY lives in .env
+```
+
+## Scrapers
+Each source lives in its own module under `scraper/src/scrapers/` and is registered in `run_all_scrapers`.
+- **Punipun** (`punipun.rs`): parses https://punipun.com/events/ and keeps events starting on or after 2026-10-01.
+- **JIExpo** (`jiexpo.rs`): calls the EventON AJAX endpoint behind https://exhibition.jiexpo.com/event-directory/ for everything from 2026-10-01 up to three years out. Categories come from the WP REST `event_type` of each event.
+- Every source runs once per hour. The scraper loops with a one-hour sleep, not cron, and runs immediately on each container start.
 
 ## System Design Details
 - **Batch Ingestion**: Scrapers use a bulk JSON payload mapped directly to relational entities (Series, Events, EventDays, Artists). The Backend API uses a single SQLite Transaction to safely UPSERT this data without locking issues.
