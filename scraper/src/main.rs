@@ -163,6 +163,7 @@ async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std:
         Box::new(ComifuroScraper),
         Box::new(PestaporaScraper),
         Box::new(scrapers::punipun::PunipunScraper),
+        Box::new(scrapers::jiexpo::JiexpoScraper),
     ];
 
     let mut master_payload = IngestPayload::default();
