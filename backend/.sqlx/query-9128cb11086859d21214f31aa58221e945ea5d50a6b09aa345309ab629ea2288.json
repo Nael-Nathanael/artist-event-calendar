@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO events (id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date)\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ON CONFLICT(id) DO UPDATE SET \n                series_id=excluded.series_id, title=excluded.title, category=excluded.category,\n                location_name=excluded.location_name, location_city=excluded.location_city,\n                floorplan_image_url=excluded.floorplan_image_url, banner_image_url=excluded.banner_image_url,\n                official_url=excluded.official_url, start_date=excluded.start_date, end_date=excluded.end_date\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "9128cb11086859d21214f31aa58221e945ea5d50a6b09aa345309ab629ea2288"
+}

@@ -1,13 +1,13 @@
 -- Represents a grouping of events (e.g., "The Eras Tour")
 CREATE TABLE IF NOT EXISTS event_series (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     description TEXT
 );
 
 -- Represents the actual event (e.g., "Pestapora 2024")
 CREATE TABLE IF NOT EXISTS events (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     series_id TEXT REFERENCES event_series(id),
     title TEXT NOT NULL, 
     category TEXT NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS events (
 
 -- Represents a specific day in a multi-day event (e.g., "Day 1")
 CREATE TABLE IF NOT EXISTS event_days (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     name TEXT NOT NULL, 
     date TEXT NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS event_days (
 );
 
 CREATE TABLE IF NOT EXISTS artists (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL UNIQUE,
     profile_image_url TEXT
 );

@@ -1,16 +1,10 @@
+use async_trait::async_trait;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 use uuid::Uuid;
 
 // --- Models ---
-// These should match the backend models closely.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EventSeries {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Event {
     pub id: String,
@@ -43,6 +37,13 @@ pub struct Artist {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct EventSeries {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct IngestPayload {
     pub series: Vec<EventSeries>,
     pub events: Vec<Event>,
@@ -51,42 +52,132 @@ pub struct IngestPayload {
     pub event_artists: Vec<(String, String)>,
 }
 
-// Dummy Scraper logic to demonstrate structure
-async fn run_scrapers() -> Result<IngestPayload, Box<dyn std::error::Error>> {
-    tracing::info!("Running scrapers...");
+impl IngestPayload {
+    fn merge(&mut self, other: IngestPayload) {
+        self.series.extend(other.series);
+        self.events.extend(other.events);
+        self.days.extend(other.days);
+        self.artists.extend(other.artists);
+        self.event_artists.extend(other.event_artists);
+    }
+}
+
+// --- Scraper Trait ---
+#[async_trait]
+pub trait ScraperBase: Send + Sync {
+    async fn scrape(&self, client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>>;
+    fn name(&self) -> &'static str;
+}
+
+// --- Scraper Implementations ---
+
+/// Comifuro Scraper (Mock implementation representing parsing comifuro.net)
+struct ComifuroScraper;
+#[async_trait]
+impl ScraperBase for ComifuroScraper {
+    fn name(&self) -> &'static str { "Comifuro" }
     
-    // Simulate scraping some data
-    let artist_id = Uuid::new_v4().to_string();
-    let artist = Artist {
-        id: artist_id.clone(),
-        name: "Punipun".to_string(),
-        profile_image_url: Some("https://example.com/punipun.jpg".to_string()),
-    };
+    async fn scrape(&self, _client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
+        // Here we would use `client.get("https://comifuro.net/").send().await?`
+        // and parse it using `scraper::Html::parse_document(&text)`
+        // For demonstration, we'll return a dynamically generated payload using the scraper's namespace.
+        
+        let event_url = "https://comifuro.net";
+        let event_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, event_url.as_bytes()).to_string();
 
-    let event_id = Uuid::new_v4().to_string();
-    let event = Event {
-        id: event_id.clone(),
-        series_id: None,
-        title: "Punipun Meet & Greet Jakarta".to_string(),
-        category: "MeetAndGreet".to_string(),
-        location_name: Some("Mall of Indonesia".to_string()),
-        location_city: Some("Jakarta".to_string()),
-        floorplan_image_url: None,
-        banner_image_url: None,
-        official_url: Some("https://example.com/punipun-event".to_string()),
-        start_date: "2026-10-15T00:00:00Z".to_string(),
-        end_date: "2026-10-15T23:59:59Z".to_string(),
-    };
+        let event = Event {
+            id: event_id.clone(),
+            series_id: None,
+            title: "Comic Frontier 19".to_string(),
+            category: "Convention".to_string(),
+            location_name: Some("ICE BSD".to_string()),
+            location_city: Some("Tangerang".to_string()),
+            floorplan_image_url: None,
+            banner_image_url: None,
+            official_url: Some(event_url.to_string()),
+            start_date: "2026-11-09T00:00:00Z".to_string(), // Future date for calendar
+            end_date: "2026-11-10T23:59:59Z".to_string(),
+        };
 
-    let payload = IngestPayload {
-        series: vec![],
-        events: vec![event],
-        days: vec![],
-        artists: vec![artist],
-        event_artists: vec![(event_id, artist_id)],
-    };
+        let mut payload = IngestPayload::default();
+        payload.events.push(event);
+        
+        Ok(payload)
+    }
+}
 
-    Ok(payload)
+/// Pestapora Scraper
+struct PestaporaScraper;
+#[async_trait]
+impl ScraperBase for PestaporaScraper {
+    fn name(&self) -> &'static str { "Pestapora" }
+    
+    async fn scrape(&self, _client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
+        let event_url = "https://pestapora.com/2026";
+        let event_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, event_url.as_bytes()).to_string();
+
+        let event = Event {
+            id: event_id.clone(),
+            series_id: None,
+            title: "Pestapora 2026".to_string(),
+            category: "MusicFestival".to_string(),
+            location_name: Some("Gambir Expo".to_string()),
+            location_city: Some("Jakarta".to_string()),
+            floorplan_image_url: None,
+            banner_image_url: None,
+            official_url: Some("https://pestapora.com".to_string()),
+            start_date: "2026-10-25T00:00:00Z".to_string(),
+            end_date: "2026-10-27T23:59:59Z".to_string(),
+        };
+
+        // Add some artists
+        let artist_names = ["Hindia", "Tulus", "Maliq & D'Essentials"];
+        let mut artists = Vec::new();
+        let mut event_artists = Vec::new();
+
+        for name in artist_names {
+            let artist_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, format!("artist:{}", name).as_bytes()).to_string();
+            artists.push(Artist {
+                id: artist_id.clone(),
+                name: name.to_string(),
+                profile_image_url: None,
+            });
+            event_artists.push((event_id.clone(), artist_id));
+        }
+
+        let mut payload = IngestPayload::default();
+        payload.events.push(event);
+        payload.artists = artists;
+        payload.event_artists = event_artists;
+        
+        Ok(payload)
+    }
+}
+
+// --- Main Worker Loop ---
+
+async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
+    let scrapers: Vec<Box<dyn ScraperBase>> = vec![
+        Box::new(ComifuroScraper),
+        Box::new(PestaporaScraper),
+    ];
+
+    let mut master_payload = IngestPayload::default();
+
+    for scraper in scrapers {
+        tracing::info!("Running scraper: {}", scraper.name());
+        match scraper.scrape(client).await {
+            Ok(payload) => {
+                tracing::info!("{} returned {} events", scraper.name(), payload.events.len());
+                master_payload.merge(payload);
+            }
+            Err(e) => {
+                tracing::error!("Scraper {} failed: {}", scraper.name(), e);
+            }
+        }
+    }
+
+    Ok(master_payload)
 }
 
 #[tokio::main]
@@ -94,25 +185,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let backend_url = env::var("BACKEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+    let backend_url = env::var("BACKEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
+    let api_key = env::var("API_KEY").unwrap_or_else(|_| "dev-secret-key".to_string());
     
+    let client = Client::builder()
+        .user_agent("ArtistEventCalendar/1.0")
+        .build()?;
+
     loop {
-        match run_scrapers().await {
+        tracing::info!("Starting scraper batch run...");
+        match run_all_scrapers(&client).await {
             Ok(payload) => {
-                tracing::info!("Scraping complete, sending {} events to backend...", payload.events.len());
-                let client = reqwest::Client::new();
+                tracing::info!("Batch scraping complete. Sending {} total events to backend...", payload.events.len());
                 let res = client.post(&format!("{}/api/internal/ingest/batch", backend_url))
-                    // .bearer_auth(api_key) // Add auth here in real scenario
+                    .bearer_auth(&api_key)
                     .json(&payload)
                     .send()
                     .await;
                 
                 match res {
                     Ok(r) if r.status().is_success() => {
-                        tracing::info!("Successfully ingested data.");
+                        tracing::info!("Successfully ingested data into API.");
                     }
                     Ok(r) => {
-                        tracing::error!("Failed to ingest: {:?}", r.status());
+                        let status = r.status();
+                        let text = r.text().await.unwrap_or_default();
+                        tracing::error!("Failed to ingest API: {} - {}", status, text);
                     }
                     Err(e) => {
                         tracing::error!("Network error pushing to backend: {}", e);
@@ -120,7 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Err(e) => {
-                tracing::error!("Scraper failed: {}", e);
+                tracing::error!("Batch scraping failed: {}", e);
             }
         }
         
