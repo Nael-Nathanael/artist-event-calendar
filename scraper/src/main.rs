@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::env;
+use std::time::{Duration, Instant};
 
 mod dedupe;
 mod scrapers;
@@ -89,22 +91,28 @@ impl IngestPayload {
 pub trait ScraperBase: Send + Sync {
     async fn scrape(&self, client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>>;
     fn name(&self) -> &'static str;
+    /// Minimum time between successful runs; zero runs it every batch.
+    fn interval(&self) -> Duration {
+        Duration::ZERO
+    }
 }
 
 // --- Main Worker Loop ---
 
-async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
-    let scrapers: Vec<Box<dyn ScraperBase>> = vec![
-        Box::new(scrapers::punipun::PunipunScraper),
-        Box::new(scrapers::jiexpo::JiexpoScraper),
-        Box::new(scrapers::ruangcosplay::RuangCosplayScraper),
-        Box::new(scrapers::eventfest::EventfestScraper),
-        Box::new(scrapers::eventseye::EventseyeScraper),
-    ];
-
+/// Runs every scraper that is due. A source skipped here is left out of `sources`,
+/// so the backend keeps its rows from the last run.
+async fn run_all_scrapers(
+    client: &Client,
+    scrapers: &[Box<dyn ScraperBase>],
+    last_ingested: &HashMap<&'static str, Instant>,
+) -> Result<IngestPayload, Box<dyn std::error::Error>> {
     let mut master_payload = IngestPayload::default();
 
     for scraper in scrapers {
+        if last_ingested.get(scraper.name()).is_some_and(|t| t.elapsed() < scraper.interval()) {
+            tracing::info!("Skipping scraper {}: not due yet", scraper.name());
+            continue;
+        }
         tracing::info!("Running scraper: {}", scraper.name());
         match scraper.scrape(client).await {
             Ok(payload) => {
@@ -134,9 +142,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .user_agent("ArtistEventCalendar/1.0")
         .build()?;
 
+    let scrapers: Vec<Box<dyn ScraperBase>> = vec![
+        Box::new(scrapers::punipun::PunipunScraper),
+        Box::new(scrapers::jiexpo::JiexpoScraper),
+        Box::new(scrapers::ruangcosplay::RuangCosplayScraper),
+        Box::new(scrapers::eventfest::EventfestScraper),
+        Box::new(scrapers::eventseye::EventseyeScraper),
+        Box::new(scrapers::jmwf::JmwfScraper),
+    ];
+    // In memory: a restart runs every source once, which is also when new code ships.
+    let mut last_ingested: HashMap<&'static str, Instant> = HashMap::new();
+
     loop {
         tracing::info!("Starting scraper batch run...");
-        match run_all_scrapers(&client).await {
+        match run_all_scrapers(&client, &scrapers, &last_ingested).await {
             Ok(payload) => {
                 tracing::info!("Batch scraping complete. Sending {} total events to backend...", payload.events.len());
                 let res = client.post(format!("{}/api/internal/ingest/batch", backend_url))
@@ -144,10 +163,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .json(&payload)
                     .send()
                     .await;
-                
+
                 match res {
                     Ok(r) if r.status().is_success() => {
                         tracing::info!("Successfully ingested data into API.");
+                        for s in scrapers.iter().filter(|s| payload.sources.iter().any(|n| n == s.name())) {
+                            last_ingested.insert(s.name(), Instant::now());
+                        }
                     }
                     Ok(r) => {
                         let status = r.status();
@@ -166,6 +188,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         // Run every hour
         tracing::info!("Sleeping for 1 hour...");
-        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        tokio::time::sleep(Duration::from_secs(3600)).await;
     }
 }

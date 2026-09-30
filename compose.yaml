@@ -31,10 +31,23 @@ services:
     environment:
       BACKEND_URL: http://backend:8081
       API_KEY: ${API_KEY:?set API_KEY in .env}
+      FLARESOLVERR_URL: http://flaresolverr:8191/v1
       RUST_LOG: info
     mem_limit: 128m
     memswap_limit: 128m
     cpus: 0.5
+
+  # Headless Chromium for pages plain HTTP can't read (Instagram without a login).
+  # Internal only: no published port.
+  flaresolverr:
+    <<: *limits
+    image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
+    environment:
+      LOG_LEVEL: info
+      TZ: Asia/Jakarta
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1
 
   web:
     <<: *limits

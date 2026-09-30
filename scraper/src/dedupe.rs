@@ -51,13 +51,23 @@ fn same_place(a: &Event, b: &Event) -> bool {
     same_day(a, b) && same_venue(a.location_name.as_deref(), b.location_name.as_deref())
 }
 
+/// One title holds the whole other one: "Jakarta Mega Wedding Festival" inside the
+/// venue's "JAKARTA MEGA WEDDING FESTIVAL dan Whosale International Kids Baby Expo".
+fn title_within(a: &str, b: &str) -> bool {
+    let norm = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
+    let (a, b) = (norm(a), norm(b));
+    a.chars().count().min(b.chars().count()) >= 12 && (a.contains(&b) || b.contains(&a))
+}
+
 /// `alone`: neither event has a same-source neighbour at its venue that day.
 fn same_event(a: &Event, b: &Event, alone: bool) -> bool {
     if !same_day(a, b) {
         return false;
     }
     let t = dice(&a.title, &b.title);
-    t >= CLOSE_TITLE || (alone && t >= LOOSE_TITLE && same_place(a, b))
+    t >= CLOSE_TITLE
+        || (title_within(&a.title, &b.title) && same_place(a, b))
+        || (alone && t >= LOOSE_TITLE && same_place(a, b))
 }
 
 fn fill(w: &mut Event, l: Event) {
@@ -238,6 +248,28 @@ mod tests {
         merge_duplicates(&mut p);
         let ids: Vec<_> = p.events.iter().map(|e| e.id.as_str()).collect();
         assert_eq!(ids, vec!["jiexpo-mi", "eye-mt", "eye-firex", "eye-water", "eye-waste"]);
+    }
+
+    #[test]
+    fn merges_a_show_named_inside_the_venue_listing() {
+        let mut p = IngestPayload {
+            events: vec![
+                ev("jiexpo-art", "ART JAKARTA 2026", "2026-10-02", Some("JIExpo Kemayoran — B3 & C1,3"), None),
+                ev(
+                    "jiexpo-jmwf",
+                    "JAKARTA MEGA WEDDING FESTIVAL dan Whosale International Kids Baby Expo (Wikibex)",
+                    "2026-10-02",
+                    Some("JIExpo Kemayoran — D2"),
+                    None,
+                ),
+                ev("jmwf-oct", "Jakarta Mega Wedding Festival", "2026-10-02", Some("JIEXPO Kemayoran, Hall D2"), Some("Free entry")),
+            ],
+            ..Default::default()
+        };
+        merge_duplicates(&mut p);
+        let ids: Vec<_> = p.events.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec!["jiexpo-art", "jiexpo-jmwf"]);
+        assert_eq!(p.events[1].description.as_deref(), Some("Free entry"));
     }
 
     fn link(event_id: &str, role: Option<&str>) -> EventArtist {
