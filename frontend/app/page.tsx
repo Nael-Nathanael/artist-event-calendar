@@ -15,6 +15,8 @@ type Event = {
   official_url: string | null;
   start_date: string;
   end_date: string;
+  description: string | null;
+  organizer: string | null;
 };
 
 const TZ = "Asia/Jakarta";
@@ -37,8 +39,45 @@ function dateRange(e: Event) {
   return start === end ? start : `${start} – ${end}`;
 }
 
+const clock = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TZ,
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+// Published start/end times; null for all-day events. Multi-day events start
+// on the first day and end on the last, so say which is which.
+function hours(e: Event) {
+  const start = clock.format(new Date(e.start_date));
+  const end = clock.format(new Date(e.end_date));
+  if (start === "00:00" && end === "23:59") return null;
+  return dayKey(e.start_date) === dayKey(e.end_date)
+    ? `${start} – ${end}`
+    : `Starts ${start} · ends ${end}`;
+}
+
 const place = (e: Event) =>
   [e.location_name, e.location_city].filter(Boolean).join(", ");
+
+// Plain-text description with http(s) and www. links made clickable.
+function Linkified({ text }: { text: string }) {
+  return text.split(/((?:https?:\/\/|www\.)[^\s]+)/).map((part, i) =>
+    /^(https?:\/\/|www\.)/.test(part) ? (
+      <a
+        // biome-ignore lint/suspicious/noArrayIndexKey: split output is static for a given text
+        key={i}
+        href={part.startsWith("www.") ? `https://${part}` : part}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary underline"
+      >
+        {part}
+      </a>
+    ) : (
+      part
+    ),
+  );
+}
 
 const iconButton =
   "state-layer inline-flex size-10 shrink-0 items-center justify-center rounded-full text-on-surface-variant after:absolute after:-inset-1 after:content-['']";
@@ -336,6 +375,14 @@ export default function Home() {
         aria-labelledby="event-title"
         className="m-auto w-[calc(100vw-48px)] min-w-[280px] max-w-[560px] rounded-xl bg-surface-container-high p-0 text-on-surface"
       >
+        {selected?.banner_image_url && (
+          // biome-ignore lint/performance/noImgElement: remote images from many scraped hosts
+          <img
+            src={selected.banner_image_url}
+            alt=""
+            className="max-h-72 w-full bg-surface-container object-cover"
+          />
+        )}
         {selected && (
           <div className="p-6">
             <h2 id="event-title" className="headline-small mb-4">
@@ -346,13 +393,30 @@ export default function Home() {
                 <Icon name="calendar_today" size={20} />
                 {dateRange(selected)}
               </p>
+              {hours(selected) && (
+                <p className="flex items-center gap-3">
+                  <Icon name="schedule" size={20} />
+                  {hours(selected)}
+                </p>
+              )}
               {place(selected) && (
                 <p className="flex items-center gap-3">
                   <Icon name="location_on" size={20} />
                   {place(selected)}
                 </p>
               )}
+              {selected.organizer && (
+                <p className="flex items-center gap-3">
+                  <Icon name="groups" size={20} />
+                  {selected.organizer}
+                </p>
+              )}
             </div>
+            {selected.description && (
+              <p className="mt-4 whitespace-pre-line break-words body-medium text-on-surface">
+                <Linkified text={selected.description} />
+              </p>
+            )}
             <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"

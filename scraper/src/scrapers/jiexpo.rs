@@ -131,10 +131,23 @@ fn decode(s: &str) -> String {
     if once.contains('&') && once != s { decode(&once) } else { once }
 }
 
+/// HTML description to plain text, one paragraph or line break per line.
+fn plain_text(html: &str) -> String {
+    let broken = Regex::new(r"(?i)<br\s*/?>|</p>").unwrap().replace_all(html, "\n");
+    decode(&broken)
+        .lines()
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 struct Row {
     url: Option<String>,
     image: Option<String>,
     hall: Option<String>,
+    organizer: Option<String>,
+    description: Option<String>,
 }
 
 fn rows(html: &str) -> HashMap<String, Row> {
@@ -142,19 +155,39 @@ fn rows(html: &str) -> HashMap<String, Row> {
     let url = Selector::parse("a[itemprop=url]").unwrap();
     let image = Selector::parse("meta[itemprop=image]").unwrap();
     let data = Selector::parse(".evoet_data").unwrap();
+    let ld = Selector::parse(r#"script[type="application/ld+json"]"#).unwrap();
 
     Html::parse_fragment(html)
         .select(&row)
         .filter_map(|r| {
             let key = r.value().attr("id")?.strip_prefix("event_")?.to_string();
             let attr = |s: &Selector, a: &str| r.select(s).next().and_then(|e| e.value().attr(a)).map(str::to_string);
-            let hall = attr(&data, "data-d")
-                .and_then(|d| serde_json::from_str::<serde_json::Value>(&d).ok())
+            let data = attr(&data, "data-d").and_then(|d| serde_json::from_str::<serde_json::Value>(&d).ok());
+            let hall = data
+                .as_ref()
                 .and_then(|d| d.get("loc.n")?.as_str().map(decode))
                 .filter(|h| !h.is_empty());
-            Some((key, Row { url: attr(&url, "href"), image: attr(&image, "content"), hall }))
+            let organizer = data
+                .as_ref()
+                .and_then(|d| d.get("orgs")?.as_object().map(|o| o.values().filter_map(|v| v.as_str()).map(decode).collect::<Vec<_>>().join(", ")))
+                .filter(|o| !o.is_empty());
+            // EventON leaves raw newlines inside JSON-LD strings, which strict JSON rejects.
+            let description = r
+                .select(&ld)
+                .next()
+                .map(|s| s.text().collect::<String>().replace(['\n', '\r', '\t'], " "))
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|j| j.get("description")?.as_str().map(plain_text))
+                .filter(|d| !d.is_empty());
+            Some((key, Row { url: attr(&url, "href"), image: attr(&image, "content"), hall, organizer, description }))
         })
         .collect()
+}
+
+/// EventON falls back to the title (sometimes quoted, dashes swapped) when an event has no description.
+fn same_text(a: &str, b: &str) -> bool {
+    let norm = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
+    norm(a) == norm(b)
 }
 
 fn parse(cal: &Calendar, types: &HashMap<u64, String>, since: DateTime<FixedOffset>) -> IngestPayload {
@@ -171,10 +204,13 @@ fn parse(cal: &Calendar, types: &HashMap<u64, String>, since: DateTime<FixedOffs
             continue;
         }
         let row = rows.get(&e.key);
+        let title = decode(&e.event_title);
         payload.events.push(Event {
             id: Uuid::new_v5(&Uuid::NAMESPACE_URL, format!("jiexpo:{}", e.key).as_bytes()).to_string(),
             series_id: None,
-            title: decode(&e.event_title),
+            description: row.and_then(|r| r.description.clone()).filter(|d| !same_text(d, &title)),
+            organizer: row.and_then(|r| r.organizer.clone()),
+            title,
             category: types.get(&e.event_id).cloned().unwrap_or_else(|| "Exhibition".to_string()),
             location_name: Some(match row.and_then(|r| r.hall.as_deref()) {
                 Some(hall) => format!("{VENUE} — {hall}"),
@@ -199,7 +235,7 @@ mod tests {
     const BODY: &str = r#"{"cals":{"evcal_calendar_1":{"json":[
         {"_ID":"7191_0","event_id":7191,"event_title":"ELECTRIC &#038; POWER INDONESIA 2026","unix_start":1788318000,"unix_end":1788606000},
         {"_ID":"7636_0","event_id":7636,"event_title":"SYNCHRONIZE FESTIVAL 2026","unix_start":1792116000,"unix_end":1792339200}
-      ],"html":"<div id=\"event_7191_0\" class=\"eventon_list_event\"><div class=\"evo_event_schema\"><a itemprop='url' href='https://exhibition.jiexpo.com/events/electric/'></a></div><span class='evoet_data' data-d=\"{&quot;loc.n&quot;:&quot;A123 &amp;amp; D12&quot;}\"></span></div><div id=\"event_7636_0\" class=\"eventon_list_event\"><div class=\"evo_event_schema\"><a itemprop='url' href='https://exhibition.jiexpo.com/events/synchronize-festival-2026/'></a><meta itemprop='image' content=\"https://exhibition.jiexpo.com/sync.jpg\" /></div><span class='evoet_data' data-d=\"{&quot;loc.n&quot;:&quot;Gambir Expo, HALL D2 &amp;amp; OPEN SPACE&quot;}\"></span></div>"}}}"#;
+      ],"html":"<div id=\"event_7191_0\" class=\"eventon_list_event\"><div class=\"evo_event_schema\"><a itemprop='url' href='https://exhibition.jiexpo.com/events/electric/'></a></div><span class='evoet_data' data-d=\"{&quot;loc.n&quot;:&quot;A123 &amp;amp; D12&quot;}\"></span></div><div id=\"event_7636_0\" class=\"eventon_list_event\"><div class=\"evo_event_schema\"><a itemprop='url' href='https://exhibition.jiexpo.com/events/synchronize-festival-2026/'></a><meta itemprop='image' content=\"https://exhibition.jiexpo.com/sync.jpg\" /></div><span class='evoet_data' data-d=\"{&quot;loc.n&quot;:&quot;Gambir Expo, HALL D2 &amp;amp; OPEN SPACE&quot;,&quot;orgs&quot;:{&quot;522&quot;:&quot;PT. Pusat Kesenangan &amp;amp; Kini&quot;}}\"></span><script type=\"application/ld+json\">{\"@type\": \"Event\", \"description\":\"<p>Three days of music.<br />\nWebsite: <a href='https://synchronizefestival.com'>synchronizefestival.com</a></p>\"}</script></div>"}}}"#;
 
     #[test]
     fn parses_events_from_cutoff() {
@@ -216,6 +252,15 @@ mod tests {
         assert_eq!(e.location_name.as_deref(), Some("JIExpo Kemayoran — Gambir Expo, HALL D2 & OPEN SPACE"));
         assert_eq!(e.official_url.as_deref(), Some("https://exhibition.jiexpo.com/events/synchronize-festival-2026/"));
         assert_eq!(e.banner_image_url.as_deref(), Some("https://exhibition.jiexpo.com/sync.jpg"));
+        assert_eq!(e.organizer.as_deref(), Some("PT. Pusat Kesenangan & Kini"));
+        assert_eq!(e.description.as_deref(), Some("Three days of music.\nWebsite: synchronizefestival.com"));
+    }
+
+    #[test]
+    fn title_fallback_is_not_a_description() {
+        assert!(same_text("'ART JAKARTA 2026'", "ART JAKARTA 2026"));
+        assert!(same_text("'PAP EXPO - ASIAN PULP'", "PAP EXPO – ASIAN PULP"));
+        assert!(!same_text("http://andreabocelli-indonesia.com", "Andrea Bocelli: Romanza World Tour"));
     }
 
     #[test]

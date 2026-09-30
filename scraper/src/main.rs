@@ -20,6 +20,8 @@ pub struct Event {
     pub official_url: Option<String>,
     pub start_date: String,
     pub end_date: String,
+    pub description: Option<String>,
+    pub organizer: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -99,6 +101,8 @@ impl ScraperBase for ComifuroScraper {
             official_url: Some(event_url.to_string()),
             start_date: "2026-11-09T00:00:00+07:00".to_string(), // Future date for calendar
             end_date: "2026-11-10T23:59:59+07:00".to_string(),
+            description: None,
+            organizer: None,
         };
 
         let mut payload = IngestPayload::default();
@@ -130,6 +134,8 @@ impl ScraperBase for PestaporaScraper {
             official_url: Some("https://pestapora.com".to_string()),
             start_date: "2026-10-25T00:00:00+07:00".to_string(),
             end_date: "2026-10-27T23:59:59+07:00".to_string(),
+            description: None,
+            organizer: None,
         };
 
         // Add some artists

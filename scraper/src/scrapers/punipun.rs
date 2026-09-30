@@ -120,6 +120,8 @@ fn parse(html: &str, since: NaiveDate) -> IngestPayload {
                 official_url: Some(link.to_string()),
                 start_date: format!("{start}T00:00:00+07:00"),
                 end_date: format!("{end}T23:59:59+07:00"),
+                description: None,
+                organizer: None,
             });
         }
     }

@@ -16,7 +16,7 @@ The application is designed for a distributed environment to separate lightweigh
 ## Setup Instructions
 
 ### 1. Database & Backend Setup
-The backend requires an SQLite database. The schema is automatically initialized on startup, but you need to set the `DATABASE_URL`.
+The backend requires an SQLite database. Migrations in `backend/migrations/` run automatically on startup; you need to set the `DATABASE_URL`. After changing a query or migration, refresh the offline query data with `cargo sqlx prepare`.
 
 ```bash
 cd backend

@@ -25,6 +25,8 @@ pub struct Event {
     pub official_url: Option<String>,
     pub start_date: String,
     pub end_date: String,
+    pub description: Option<String>,
+    pub organizer: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -84,7 +86,7 @@ async fn get_events(
     let events = sqlx::query_as!(
         Event,
         r#"
-        SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date
+        SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date, description, organizer
         FROM events
         WHERE start_date < ? AND end_date >= ?
         ORDER BY start_date ASC
@@ -132,15 +134,16 @@ async fn ingest_batch(
     for e in payload.events {
         sqlx::query!(
             r#"
-            INSERT INTO events (id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET 
+            INSERT INTO events (id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date, description, organizer)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
                 series_id=excluded.series_id, title=excluded.title, category=excluded.category,
                 location_name=excluded.location_name, location_city=excluded.location_city,
                 floorplan_image_url=excluded.floorplan_image_url, banner_image_url=excluded.banner_image_url,
-                official_url=excluded.official_url, start_date=excluded.start_date, end_date=excluded.end_date
+                official_url=excluded.official_url, start_date=excluded.start_date, end_date=excluded.end_date,
+                description=excluded.description, organizer=excluded.organizer
             "#,
-            e.id, e.series_id, e.title, e.category, e.location_name, e.location_city, e.floorplan_image_url, e.banner_image_url, e.official_url, e.start_date, e.end_date
+            e.id, e.series_id, e.title, e.category, e.location_name, e.location_city, e.floorplan_image_url, e.banner_image_url, e.official_url, e.start_date, e.end_date, e.description, e.organizer
         ).execute(&mut *tx).await.map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
     }
 
@@ -211,12 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect_with(opts)
         .await?;
 
-    let schema = std::fs::read_to_string("schema.sql").unwrap_or_else(|_| "".to_string());
-    if !schema.is_empty() {
-        tracing::info!("Initializing database schema...");
-        let mut conn = pool.acquire().await?;
-        sqlx::query(&schema).execute(&mut *conn).await?;
-    }
+    sqlx::migrate!().run(&pool).await?;
 
     let state = Arc::new(AppState { db: pool, api_key });
 
