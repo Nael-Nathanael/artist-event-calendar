@@ -52,7 +52,10 @@ export default function Home() {
   const [failed, setFailed] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [selected, setSelected] = useState<Event | null>(null);
+  const [openDay, setOpenDay] = useState<string | null>(null);
+  const [perCell, setPerCell] = useState(3);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCurrentDate(new Date());
@@ -100,8 +103,9 @@ export default function Home() {
   }, [year, month, currentDate]);
 
   useEffect(() => {
-    if (selected) dialogRef.current?.showModal();
-  }, [selected]);
+    const d = dialogRef.current;
+    if ((selected || openDay) && d && !d.open) d.showModal();
+  }, [selected, openDay]);
 
   const monthLabel = new Date(year, month, 1).toLocaleString("en-GB", {
     month: "long",
@@ -110,7 +114,21 @@ export default function Home() {
   const today = dayKey(new Date());
   const leading = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells = Math.ceil((leading + daysInMonth) / 7) * 7;
+  const weeks = Math.ceil((leading + daysInMonth) / 7);
+  const cells = weeks * 7;
+
+  // How many 20px event blocks (plus 4px gap) fit under the 24px date in a week row.
+  const ready = currentDate !== null;
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!ready || !grid) return;
+    const observer = new ResizeObserver(() => {
+      const row = grid.clientHeight / weeks;
+      setPerCell(Math.max(1, Math.floor((row - 8 - 24) / 24)));
+    });
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [ready, weeks]);
 
   const eventsOn = (key: string) =>
     events.filter(
@@ -118,30 +136,19 @@ export default function Home() {
     );
 
   return (
-    <div className="min-h-screen bg-surface text-on-surface">
+    <div className="min-h-screen bg-surface text-on-surface expanded:flex expanded:h-dvh expanded:min-h-0 expanded:flex-col">
       <header
-        className={`sticky top-0 z-10 flex h-16 items-center px-4 transition-colors duration-200 ease-standard ${scrolled ? "bg-surface-container" : "bg-surface"}`}
+        className={`sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 px-4 transition-colors duration-200 ease-standard ${scrolled ? "bg-surface-container" : "bg-surface"}`}
       >
-        <h1 className="title-large truncate">Artist Event Calendar</h1>
-        {loading && (
-          <div
-            role="progressbar"
-            aria-label="Loading events"
-            className="linear-progress absolute inset-x-0 bottom-0 h-1 overflow-hidden"
-          />
-        )}
-      </header>
-
-      {currentDate && (
-        <main className="mx-auto w-full max-w-7xl px-4 pb-6 expanded:px-6">
-          <div className="flex items-center gap-2 py-3">
-            <h2 className="headline-small flex-1" aria-live="polite">
-              {monthLabel}
-            </h2>
+        <h1 className="title-large hidden truncate medium:block medium:mr-4">
+          Artist Event Calendar
+        </h1>
+        {currentDate && (
+          <>
             <button
               type="button"
               onClick={() => setCurrentDate(new Date())}
-              className="state-layer inline-flex h-10 items-center rounded-full border border-outline px-6 label-large text-primary"
+              className="state-layer inline-flex h-10 shrink-0 items-center rounded-full border border-outline px-6 label-large text-primary"
             >
               Today
             </button>
@@ -161,8 +168,22 @@ export default function Home() {
             >
               <Icon name="chevron_right" />
             </button>
-          </div>
+            <h2 className="title-large truncate" aria-live="polite">
+              {monthLabel}
+            </h2>
+          </>
+        )}
+        {loading && (
+          <div
+            role="progressbar"
+            aria-label="Loading events"
+            className="linear-progress absolute inset-x-0 bottom-0 h-1 overflow-hidden"
+          />
+        )}
+      </header>
 
+      {currentDate && (
+        <main className="mx-auto w-full max-w-7xl px-4 pb-6 expanded:flex expanded:min-h-0 expanded:flex-1 expanded:flex-col expanded:px-6 expanded:pb-4">
           {failed && (
             <div className="mb-4 flex items-center gap-2 rounded-md bg-surface-container-high py-2 pl-4 pr-2 body-medium">
               <span className="flex-1">Couldn&apos;t load events.</span>
@@ -177,52 +198,73 @@ export default function Home() {
           )}
 
           {/* Expanded window: month grid */}
-          <section className="hidden expanded:block" aria-label={monthLabel}>
+          <section
+            className="hidden min-h-0 flex-1 flex-col expanded:flex"
+            aria-label={monthLabel}
+          >
             <div className="grid grid-cols-7">
               {WEEKDAYS.map((d) => (
                 <div
                   key={d}
-                  className="py-2 text-center label-medium text-on-surface-variant"
+                  className="py-1 text-center label-medium text-on-surface-variant"
                 >
                   {d}
                 </div>
               ))}
             </div>
-            <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border border-outline-variant bg-outline-variant">
+            <div
+              ref={gridRef}
+              style={{ gridTemplateRows: `repeat(${weeks}, minmax(0, 1fr))` }}
+              className="grid min-h-0 flex-1 grid-cols-7 gap-px overflow-hidden rounded-lg border border-outline-variant bg-outline-variant"
+            >
               {Array.from({ length: cells }, (_, i) => {
                 const day = i - leading + 1;
                 if (day < 1 || day > daysInMonth) {
                   return (
                     <div
                       key={`pad-${year}-${month}-${String(i)}`}
-                      className="min-h-32 bg-surface-container-low"
+                      className="bg-surface-container-low"
                     />
                   );
                 }
                 const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                 const isToday = key === today;
+                const dayEvents = eventsOn(key);
+                const shown =
+                  dayEvents.length > perCell
+                    ? dayEvents.slice(0, perCell - 1)
+                    : dayEvents;
                 return (
                   <div
                     key={key}
-                    className="flex min-h-32 flex-col gap-1 bg-surface p-1"
+                    className="flex min-h-0 flex-col gap-1 overflow-hidden bg-surface p-1"
                   >
                     <span
-                      className={`mx-auto flex size-6 items-center justify-center rounded-full label-medium ${isToday ? "border border-primary text-primary" : "text-on-surface-variant"}`}
+                      className={`mx-auto flex size-6 shrink-0 items-center justify-center rounded-full label-medium ${isToday ? "border border-primary text-primary" : "text-on-surface-variant"}`}
                       aria-current={isToday ? "date" : undefined}
                     >
                       {day}
                     </span>
-                    {eventsOn(key).map((e) => (
+                    {shown.map((e) => (
                       <button
                         key={e.id}
                         type="button"
                         onClick={() => setSelected(e)}
                         title={e.title}
-                        className="state-layer w-full truncate rounded-xs bg-secondary-container px-2 py-0.5 text-left label-medium text-on-secondary-container"
+                        className="state-layer h-5 w-full shrink-0 truncate rounded-xs bg-secondary-container px-2 text-left label-medium text-on-secondary-container"
                       >
                         {e.title}
                       </button>
                     ))}
+                    {shown.length < dayEvents.length && (
+                      <button
+                        type="button"
+                        onClick={() => setOpenDay(key)}
+                        className="state-layer h-5 w-full shrink-0 rounded-xs px-2 text-left label-medium text-on-surface-variant"
+                      >
+                        +{dayEvents.length - shown.length} more
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -284,7 +326,10 @@ export default function Home() {
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: backdrop click is pointer-only; Escape closes the native dialog. */}
       <dialog
         ref={dialogRef}
-        onClose={() => setSelected(null)}
+        onClose={() => {
+          setSelected(null);
+          setOpenDay(null);
+        }}
         onClick={(ev) => {
           if (ev.target === dialogRef.current) dialogRef.current.close();
         }}
@@ -327,6 +372,38 @@ export default function Home() {
                   <Icon name="open_in_new" size={18} />
                 </a>
               )}
+            </div>
+          </div>
+        )}
+        {!selected && openDay && (
+          <div className="p-6">
+            <h2 id="event-title" className="headline-small mb-4">
+              {shortDate.format(new Date(`${openDay}T12:00:00+07:00`))}
+            </h2>
+            <ul className="-mx-6">
+              {eventsOn(openDay).map((e) => (
+                <li key={e.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(e)}
+                    className="state-layer w-full px-6 py-2 text-left"
+                  >
+                    <span className="block body-large">{e.title}</span>
+                    <span className="block body-medium text-on-surface-variant">
+                      {[dateRange(e), place(e)].filter(Boolean).join(" · ")}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => dialogRef.current?.close()}
+                className={textButton}
+              >
+                Close
+              </button>
             </div>
           </div>
         )}
