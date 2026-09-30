@@ -97,8 +97,8 @@ impl ScraperBase for ComifuroScraper {
             floorplan_image_url: None,
             banner_image_url: None,
             official_url: Some(event_url.to_string()),
-            start_date: "2026-11-09T00:00:00Z".to_string(), // Future date for calendar
-            end_date: "2026-11-10T23:59:59Z".to_string(),
+            start_date: "2026-11-09T00:00:00+07:00".to_string(), // Future date for calendar
+            end_date: "2026-11-10T23:59:59+07:00".to_string(),
         };
 
         let mut payload = IngestPayload::default();
@@ -128,8 +128,8 @@ impl ScraperBase for PestaporaScraper {
             floorplan_image_url: None,
             banner_image_url: None,
             official_url: Some("https://pestapora.com".to_string()),
-            start_date: "2026-10-25T00:00:00Z".to_string(),
-            end_date: "2026-10-27T23:59:59Z".to_string(),
+            start_date: "2026-10-25T00:00:00+07:00".to_string(),
+            end_date: "2026-10-27T23:59:59+07:00".to_string(),
         };
 
         // Add some artists
