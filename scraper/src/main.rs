@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use uuid::Uuid;
 
+mod scrapers;
+
 // --- Models ---
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Event {
@@ -160,6 +162,7 @@ async fn run_all_scrapers(client: &Client) -> Result<IngestPayload, Box<dyn std:
     let scrapers: Vec<Box<dyn ScraperBase>> = vec![
         Box::new(ComifuroScraper),
         Box::new(PestaporaScraper),
+        Box::new(scrapers::punipun::PunipunScraper),
     ];
 
     let mut master_payload = IngestPayload::default();
