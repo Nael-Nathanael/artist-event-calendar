@@ -1,4 +1,4 @@
-import React from 'react';
+import { Suspense } from 'react';
 
 type Event = {
   id: string;
@@ -16,8 +16,9 @@ type Event = {
 
 async function getEvents(): Promise<Event[]> {
   try {
-    const res = await fetch('http://127.0.0.1:8081/api/events', {
-      next: { revalidate: 60 }, // ISR: Revalidate every 60 seconds
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8081';
+    const res = await fetch(`${backendUrl}/api/events`, {
+      next: { revalidate: 60 }, // ISR
     });
     if (!res.ok) {
       throw new Error('Failed to fetch data');
@@ -32,64 +33,71 @@ async function getEvents(): Promise<Event[]> {
 export default async function Home() {
   const events = await getEvents();
 
+  // Simple hardcoded month generation (e.g. October 2026 for demonstration)
+  // In a real app, use query params to change months.
+  const daysInMonth = Array.from({ length: 31 }, (_, i) => i + 1);
+
   return (
     <main className="min-h-screen p-8 bg-gray-50 text-gray-900">
-      <header className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-800 tracking-tight">Artist Event Calendar</h1>
-        <p className="text-gray-600 mt-2">Discover upcoming concerts, conventions, and meet & greets.</p>
+      <header className="mb-8 flex justify-between items-end">
+        <div>
+          <h1 className="text-4xl font-bold text-gray-800 tracking-tight">Artist Event Calendar</h1>
+          <p className="text-gray-600 mt-2">Discover upcoming concerts, conventions, and meet & greets.</p>
+        </div>
+        <h2 className="text-2xl font-semibold text-gray-700">October 2026</h2>
       </header>
 
-      <section className="bg-white rounded-xl shadow p-6">
-        <h2 className="text-2xl font-semibold mb-4 border-b pb-2">Upcoming Events</h2>
-        
-        {events.length === 0 ? (
-          <div className="text-gray-500 py-10 text-center">No events found. Waiting for scrapers to run...</div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {events.map((event) => (
-              <div key={event.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow bg-gray-50">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
-                    {event.category}
-                  </span>
-                </div>
-                <h3 className="text-lg font-bold text-gray-900">{event.title}</h3>
-                
-                <div className="mt-4 text-sm text-gray-600 space-y-1">
-                  <p className="flex items-center">
-                    <span className="font-semibold w-20">Starts:</span> 
-                    {new Date(event.start_date).toLocaleDateString()}
-                  </p>
-                  <p className="flex items-center">
-                    <span className="font-semibold w-20">Ends:</span> 
-                    {new Date(event.end_date).toLocaleDateString()}
-                  </p>
-                  {(event.location_city || event.location_name) && (
-                    <p className="flex items-start mt-2">
-                      <span className="font-semibold w-20 mt-1">Location:</span> 
-                      <span className="flex-1">
-                        {event.location_name} {event.location_name && event.location_city ? ',' : ''} {event.location_city}
-                      </span>
-                    </p>
-                  )}
-                </div>
-                
-                {event.official_url && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <a 
-                      href={event.official_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 font-medium text-sm"
-                    >
-                      Visit Official Website &rarr;
-                    </a>
-                  </div>
-                )}
-              </div>
-            ))}
+      <section className="bg-white rounded-xl shadow p-6 overflow-x-auto">
+        <div className="min-w-[800px]">
+          {/* Calendar Header */}
+          <div className="grid grid-cols-7 gap-2 mb-2 text-center font-semibold text-gray-600">
+            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
           </div>
-        )}
+          
+          {/* Calendar Grid */}
+          <div className="grid grid-cols-7 gap-2">
+            {/* Empty slots for start of month (Oct 2026 starts on Thursday) */}
+            <div className="min-h-24 border rounded bg-gray-50/50"></div>
+            <div className="min-h-24 border rounded bg-gray-50/50"></div>
+            <div className="min-h-24 border rounded bg-gray-50/50"></div>
+            <div className="min-h-24 border rounded bg-gray-50/50"></div>
+            
+            {daysInMonth.map(day => {
+              // Oct 2026 string format
+              const dateString = `2026-10-${day.toString().padStart(2, '0')}`;
+              
+              // Find events overlapping with this day
+              const dayEvents = events.filter(e => {
+                const s = new Date(e.start_date).toLocaleString('en-US', { timeZone: 'Asia/Jakarta' });
+                const eEnd = new Date(e.end_date).toLocaleString('en-US', { timeZone: 'Asia/Jakarta' });
+                const current = new Date(`${dateString}T12:00:00+07:00`).toLocaleString('en-US', { timeZone: 'Asia/Jakarta' });
+                
+                // Simplified overlap logic for same day
+                return s.split(',')[0] === current.split(',')[0] || eEnd.split(',')[0] === current.split(',')[0];
+              });
+
+              return (
+                <div key={day} className="min-h-32 border rounded p-2 flex flex-col bg-white hover:bg-gray-50 transition-colors relative">
+                  <span className="text-sm font-medium text-gray-500 mb-1">{day}</span>
+                  <div className="flex-1 flex flex-col gap-1 overflow-y-auto">
+                    {dayEvents.map(event => (
+                      <a 
+                        key={event.id}
+                        href={event.official_url || '#'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs bg-blue-100 text-blue-800 p-1 rounded truncate shadow-sm cursor-pointer hover:bg-blue-200"
+                        title={`${event.title} - ${event.location_city || ''}`}
+                      >
+                        {event.title}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </section>
     </main>
   );

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO event_days (id, event_id, name, date, rundown_json)\n            VALUES (?, ?, ?, ?, ?)\n            ON CONFLICT(id) DO UPDATE SET name=excluded.name, date=excluded.date, rundown_json=excluded.rundown_json\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "32a0648426dba1cc5b3950738fa9a554ec63f86808693f1256ae5effc7015202"
+}

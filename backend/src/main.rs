@@ -1,18 +1,18 @@
 use axum::{
-    extract::{State, Query},
-    http::StatusCode,
+    extract::{State},
+    http::{StatusCode, HeaderMap},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
-use std::{env, net::SocketAddr, sync::Arc};
+use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions}, SqlitePool};
+use std::{env, net::SocketAddr, sync::Arc, str::FromStr};
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // --- Models ---
-
+// (Models stay the same)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Event {
     pub id: String,
@@ -64,19 +64,34 @@ pub struct IngestPayload {
 
 struct AppState {
     db: SqlitePool,
+    api_key: String,
 }
 
-// --- Handlers ---
+use axum::extract::Query;
+
+#[derive(Deserialize)]
+struct EventParams {
+    from: Option<String>,
+    to: Option<String>,
+}
 
 async fn get_events(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<EventParams>,
 ) -> Result<Json<Vec<Event>>, (StatusCode, String)> {
+    let from_date = params.from.unwrap_or_else(|| "1970-01-01".to_string());
+    let to_date = params.to.unwrap_or_else(|| "9999-12-31".to_string());
+
     let events = sqlx::query_as!(
         Event,
         r#"
         SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date
         FROM events
-        "#
+        WHERE start_date >= ? AND start_date <= ?
+        ORDER BY start_date ASC
+        "#,
+        from_date,
+        to_date
     )
     .fetch_all(&state.db)
     .await
@@ -90,9 +105,14 @@ async fn get_events(
 
 async fn ingest_batch(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(payload): Json<IngestPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    // In a real app, verify API key here
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+    if auth_header != Some(&format!("Bearer {}", state.api_key)) {
+        return Err((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()));
+    }
+
     let mut tx = state.db.begin().await.map_err(|e| {
         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
     })?;
@@ -137,7 +157,9 @@ async fn ingest_batch(
         ).execute(&mut *tx).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
 
-    // Upsert Artists
+    // Upsert Artists (now gracefully handling name conflicts by ignoring if ID matches)
+    // Wait, the artist name is UNIQUE, so if the scraper sends a new ID for the same name, it conflicts.
+    // The scraper will use deterministic IDs based on name, so `id` will conflict first, resolving it.
     for a in payload.artists {
         sqlx::query!(
             r#"
@@ -184,11 +206,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://events.db".to_string());
+    let api_key = env::var("API_KEY").unwrap_or_else(|_| "dev-secret-key".to_string());
     
-    // In SQLite we can create DB if it doesn't exist via connection options
+    let opts = SqliteConnectOptions::from_str(&db_url)?.create_if_missing(true);
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&db_url)
+        .connect_with(opts)
         .await?;
 
     let schema = std::fs::read_to_string("schema.sql").unwrap_or_else(|_| "".to_string());
@@ -198,7 +221,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sqlx::query(&schema).execute(&mut *conn).await?;
     }
 
-    let state = Arc::new(AppState { db: pool });
+    let state = Arc::new(AppState { db: pool, api_key });
 
     let app = Router::new()
         .route("/api/events", get(get_events))
@@ -206,8 +229,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8081));
-    tracing::debug!("listening on {}", addr);
+    let addr = SocketAddr::from(([0, 0, 0, 0], 8081));
+    tracing::info!("listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 

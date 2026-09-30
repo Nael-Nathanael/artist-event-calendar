@@ -1,0 +1,80 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date\n        FROM events\n        WHERE start_date >= ? AND start_date <= ?\n        ORDER BY start_date ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "series_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "title",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "category",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "location_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "location_city",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "floorplan_image_url",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "banner_image_url",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "official_url",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "start_date",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "end_date",
+        "ordinal": 10,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e5fbd4a712219ebb20b0e05081d0b82a039bf6b88440b122413d33e479de1dd0"
+}

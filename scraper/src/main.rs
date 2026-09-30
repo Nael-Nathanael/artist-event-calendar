@@ -55,19 +55,23 @@ pub struct IngestPayload {
 async fn run_scrapers() -> Result<IngestPayload, Box<dyn std::error::Error>> {
     tracing::info!("Running scrapers...");
     
-    // Simulate scraping some data
-    let artist_id = Uuid::new_v4().to_string();
+    // Use a fixed namespace for deterministic UUIDs
+    let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+
+    let artist_name = "Punipun";
+    let artist_id = Uuid::new_v5(&namespace, artist_name.as_bytes()).to_string();
     let artist = Artist {
         id: artist_id.clone(),
-        name: "Punipun".to_string(),
+        name: artist_name.to_string(),
         profile_image_url: Some("https://example.com/punipun.jpg".to_string()),
     };
 
-    let event_id = Uuid::new_v4().to_string();
+    let event_name = "Punipun Meet & Greet Jakarta 2026";
+    let event_id = Uuid::new_v5(&namespace, event_name.as_bytes()).to_string();
     let event = Event {
         id: event_id.clone(),
         series_id: None,
-        title: "Punipun Meet & Greet Jakarta".to_string(),
+        title: event_name.to_string(),
         category: "MeetAndGreet".to_string(),
         location_name: Some("Mall of Indonesia".to_string()),
         location_city: Some("Jakarta".to_string()),
@@ -95,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let backend_url = env::var("BACKEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
+    let api_key = env::var("API_KEY").unwrap_or_else(|_| "dev-secret-key".to_string());
     
     loop {
         match run_scrapers().await {
@@ -102,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tracing::info!("Scraping complete, sending {} events to backend...", payload.events.len());
                 let client = reqwest::Client::new();
                 let res = client.post(&format!("{}/api/internal/ingest/batch", backend_url))
-                    // .bearer_auth(api_key) // Add auth here in real scenario
+                    .bearer_auth(&api_key)
                     .json(&payload)
                     .send()
                     .await;

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO artists (id, name, profile_image_url)\n            VALUES (?, ?, ?)\n            ON CONFLICT(id) DO UPDATE SET name=excluded.name, profile_image_url=excluded.profile_image_url\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "53bd06ec203b8f88b7e9c763f3f81ecfdb335a36b0660bae290524dd172c64f2"
+}
