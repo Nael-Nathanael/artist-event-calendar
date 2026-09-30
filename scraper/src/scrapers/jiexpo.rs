@@ -1,28 +1,20 @@
 //! exhibition.jiexpo.com/event-directory: JIExpo Kemayoran's EventON calendar.
-//! The page loads events by AJAX (`eventon_init_load`); one call with a wide focus
-//! range returns every published event. Event types come from the WP REST API.
 
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Duration, FixedOffset, NaiveDate, Utc};
-use regex::Regex;
+use chrono::{DateTime, FixedOffset, NaiveDate};
 use reqwest::Client;
-use scraper::{Html, Selector};
-use serde::Deserialize;
 use uuid::Uuid;
 
+use super::eventon::{self, Calendar};
 use crate::{Event, IngestPayload, ScraperBase};
 
 const SITE: &str = "https://exhibition.jiexpo.com";
 const VENUE: &str = "JIExpo Kemayoran";
 
-fn wib() -> FixedOffset {
-    FixedOffset::east_opt(7 * 3600).unwrap()
-}
-
 fn since() -> DateTime<FixedOffset> {
-    NaiveDate::from_ymd_opt(2026, 10, 1).unwrap().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(wib()).unwrap()
+    NaiveDate::from_ymd_opt(2026, 10, 1).unwrap().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(eventon::wib()).unwrap()
 }
 
 pub struct JiexpoScraper;
@@ -32,187 +24,38 @@ impl ScraperBase for JiexpoScraper {
     fn name(&self) -> &'static str { "JIExpo" }
 
     async fn scrape(&self, client: &Client) -> Result<IngestPayload, Box<dyn std::error::Error>> {
-        let page = client.get(format!("{SITE}/event-directory/")).send().await?.error_for_status()?.text().await?;
-        let nonce = Regex::new(r#""n":"([0-9a-f]+)""#)?
-            .captures(&page)
-            .ok_or("EventON nonce not found on event directory page")?[1]
-            .to_string();
-
-        let sc = "cals[evcal_calendar_1][sc]";
-        let start = since().timestamp().to_string();
-        let end = (Utc::now() + Duration::days(3 * 366)).timestamp().to_string();
-        let body = client
-            .post(format!("{SITE}/?evo-ajax=eventon_init_load"))
-            .form(&[
-                (format!("{sc}[focus_start_date_range]"), start),
-                (format!("{sc}[focus_end_date_range]"), end),
-                ("nonce".to_string(), nonce),
-            ])
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        let cal = calendar(&body)?;
-
-        let ids: Vec<String> = cal.json.iter().map(|e| e.event_id.to_string()).collect();
-        let types = if ids.is_empty() { HashMap::new() } else { event_types(client, &ids).await? };
+        let cal = eventon::load(client, SITE, "/event-directory/", since()).await?;
+        let classes = eventon::post_classes(client, SITE, &cal).await?;
+        let types = classes
+            .iter()
+            .filter_map(|(id, c)| Some((*id, eventon::pascal(eventon::term(Some(c), "event_type")?))))
+            .collect();
         Ok(parse(&cal, &types, since()))
     }
 }
 
-#[derive(Deserialize)]
-struct Calendar {
-    json: Vec<EvoEvent>,
-    html: String,
-}
-
-#[derive(Deserialize)]
-struct EvoEvent {
-    #[serde(rename = "_ID")]
-    key: String,
-    event_id: u64,
-    event_title: String,
-    unix_start: i64,
-    unix_end: i64,
-}
-
-#[derive(Deserialize)]
-struct RestEvent {
-    id: u64,
-    class_list: Vec<String>,
-}
-
-fn calendar(body: &str) -> Result<Calendar, Box<dyn std::error::Error>> {
-    #[derive(Deserialize)]
-    struct Response {
-        status: Option<String>,
-        msg: Option<String>,
-        cals: Option<serde_json::Value>,
-    }
-    let r: Response = serde_json::from_str(body)?;
-    if r.status.as_deref() == Some("bad") {
-        return Err(format!("EventON: {}", r.msg.unwrap_or_default()).into());
-    }
-    // `cals` is `{}`-keyed by calendar id, or `[]` when nothing matched.
-    match r.cals.and_then(|c| c.as_object().and_then(|m| m.values().next().cloned())) {
-        Some(c) => Ok(serde_json::from_value(c)?),
-        None => Ok(Calendar { json: vec![], html: String::new() }),
-    }
-}
-
-/// Event id -> PascalCase category from the `event_type-<slug>` post class.
-async fn event_types(client: &Client, ids: &[String]) -> Result<HashMap<u64, String>, Box<dyn std::error::Error>> {
-    let mut types = HashMap::new();
-    for chunk in ids.chunks(100) {
-        let url = format!("{SITE}/wp-json/wp/v2/ajde_events?include={}&per_page=100&_fields=id,class_list", chunk.join(","));
-        let events: Vec<RestEvent> = client.get(url).send().await?.error_for_status()?.json().await?;
-        for e in events {
-            if let Some(slug) = e.class_list.iter().find_map(|c| c.strip_prefix("event_type-")) {
-                types.insert(e.id, pascal(slug));
-            }
-        }
-    }
-    Ok(types)
-}
-
-fn pascal(slug: &str) -> String {
-    slug.split('-')
-        .map(|w| {
-            let mut c = w.chars();
-            c.next().map(|f| f.to_uppercase().chain(c).collect::<String>()).unwrap_or_default()
-        })
-        .collect()
-}
-
-/// Decodes HTML entities (EventON double-encodes some, e.g. `&amp;amp;`).
-fn decode(s: &str) -> String {
-    let once: String = Html::parse_fragment(s).root_element().text().collect();
-    if once.contains('&') && once != s { decode(&once) } else { once }
-}
-
-/// HTML description to plain text, one paragraph or line break per line.
-fn plain_text(html: &str) -> String {
-    let broken = Regex::new(r"(?i)<br\s*/?>|</p>").unwrap().replace_all(html, "\n");
-    decode(&broken)
-        .lines()
-        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-struct Row {
-    url: Option<String>,
-    image: Option<String>,
-    hall: Option<String>,
-    organizer: Option<String>,
-    description: Option<String>,
-}
-
-fn rows(html: &str) -> HashMap<String, Row> {
-    let row = Selector::parse(".eventon_list_event").unwrap();
-    let url = Selector::parse("a[itemprop=url]").unwrap();
-    let image = Selector::parse("meta[itemprop=image]").unwrap();
-    let data = Selector::parse(".evoet_data").unwrap();
-    let ld = Selector::parse(r#"script[type="application/ld+json"]"#).unwrap();
-
-    Html::parse_fragment(html)
-        .select(&row)
-        .filter_map(|r| {
-            let key = r.value().attr("id")?.strip_prefix("event_")?.to_string();
-            let attr = |s: &Selector, a: &str| r.select(s).next().and_then(|e| e.value().attr(a)).map(str::to_string);
-            let data = attr(&data, "data-d").and_then(|d| serde_json::from_str::<serde_json::Value>(&d).ok());
-            let hall = data
-                .as_ref()
-                .and_then(|d| d.get("loc.n")?.as_str().map(decode))
-                .filter(|h| !h.is_empty());
-            let organizer = data
-                .as_ref()
-                .and_then(|d| d.get("orgs")?.as_object().map(|o| o.values().filter_map(|v| v.as_str()).map(decode).collect::<Vec<_>>().join(", ")))
-                .filter(|o| !o.is_empty());
-            // EventON leaves raw newlines inside JSON-LD strings, which strict JSON rejects.
-            let description = r
-                .select(&ld)
-                .next()
-                .map(|s| s.text().collect::<String>().replace(['\n', '\r', '\t'], " "))
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                .and_then(|j| j.get("description")?.as_str().map(plain_text))
-                .filter(|d| !d.is_empty());
-            Some((key, Row { url: attr(&url, "href"), image: attr(&image, "content"), hall, organizer, description }))
-        })
-        .collect()
-}
-
-/// EventON falls back to the title (sometimes quoted, dashes swapped) when an event has no description.
-fn same_text(a: &str, b: &str) -> bool {
-    let norm = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
-    norm(a) == norm(b)
-}
-
 fn parse(cal: &Calendar, types: &HashMap<u64, String>, since: DateTime<FixedOffset>) -> IngestPayload {
-    let rows = rows(&cal.html);
+    let rows = eventon::rows(&cal.html);
     let mut payload = IngestPayload::default();
 
     for e in &cal.json {
-        let (Some(start), Some(end)) = (DateTime::from_timestamp(e.unix_start, 0), DateTime::from_timestamp(e.unix_end, 0)) else {
+        let Some((start, end)) = eventon::span(e) else {
             tracing::warn!("JIExpo: bad timestamps for {}", e.key);
             continue;
         };
-        let (start, end) = (start.with_timezone(&wib()), end.with_timezone(&wib()));
         if start < since {
             continue;
         }
         let row = rows.get(&e.key);
-        let title = decode(&e.event_title);
+        let title = eventon::decode(&e.event_title);
         payload.events.push(Event {
             id: Uuid::new_v5(&Uuid::NAMESPACE_URL, format!("jiexpo:{}", e.key).as_bytes()).to_string(),
             series_id: None,
-            description: row.and_then(|r| r.description.clone()).filter(|d| !same_text(d, &title)),
+            description: row.and_then(|r| r.description.clone()).filter(|d| !eventon::same_text(d, &title)),
             organizer: row.and_then(|r| r.organizer.clone()),
             title,
             category: types.get(&e.event_id).cloned().unwrap_or_else(|| "Exhibition".to_string()),
-            location_name: Some(match row.and_then(|r| r.hall.as_deref()) {
+            location_name: Some(match row.and_then(|r| r.location.as_deref()) {
                 Some(hall) => format!("{VENUE} — {hall}"),
                 None => VENUE.to_string(),
             }),
@@ -220,8 +63,8 @@ fn parse(cal: &Calendar, types: &HashMap<u64, String>, since: DateTime<FixedOffs
             floorplan_image_url: None,
             banner_image_url: row.and_then(|r| r.image.clone()),
             official_url: row.and_then(|r| r.url.clone()),
-            start_date: start.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
-            end_date: end.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
+            start_date: eventon::iso(start),
+            end_date: eventon::iso(end),
         });
     }
     payload
@@ -239,8 +82,8 @@ mod tests {
 
     #[test]
     fn parses_events_from_cutoff() {
-        let cal = calendar(BODY).unwrap();
-        let types = HashMap::from([(7636, pascal("concert-festival"))]);
+        let cal = eventon::calendar(BODY).unwrap();
+        let types = HashMap::from([(7636, eventon::pascal("concert-festival"))]);
         let p = parse(&cal, &types, since());
 
         assert_eq!(p.events.len(), 1, "September event is before the cutoff");
@@ -254,18 +97,5 @@ mod tests {
         assert_eq!(e.banner_image_url.as_deref(), Some("https://exhibition.jiexpo.com/sync.jpg"));
         assert_eq!(e.organizer.as_deref(), Some("PT. Pusat Kesenangan & Kini"));
         assert_eq!(e.description.as_deref(), Some("Three days of music.\nWebsite: synchronizefestival.com"));
-    }
-
-    #[test]
-    fn title_fallback_is_not_a_description() {
-        assert!(same_text("'ART JAKARTA 2026'", "ART JAKARTA 2026"));
-        assert!(same_text("'PAP EXPO - ASIAN PULP'", "PAP EXPO – ASIAN PULP"));
-        assert!(!same_text("http://andreabocelli-indonesia.com", "Andrea Bocelli: Romanza World Tour"));
-    }
-
-    #[test]
-    fn empty_calendar_and_bad_nonce() {
-        assert!(calendar(r#"{"cals":[]}"#).unwrap().json.is_empty());
-        assert!(calendar(r#"{"status":"bad","msg":"Nonce validation failed"}"#).is_err());
     }
 }
