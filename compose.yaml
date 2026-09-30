@@ -27,7 +27,7 @@ services:
   scraper:
     <<: *limits
     build: ./scraper
-    depends_on: [backend]
+    depends_on: [backend, flaresolverr]
     environment:
       BACKEND_URL: http://backend:8081
       API_KEY: ${API_KEY:?set API_KEY in .env}
