@@ -44,6 +44,9 @@ bun run dev
 ```
 The frontend will run on `http://localhost:3000`. It proxies `/api/events` to `BACKEND_URL` (default `http://127.0.0.1:8081`).
 
+## Search
+The search button in the app bar looks across every month. `GET /api/events?q=text` matches the text, case-insensitively, against an event's title, venue, city, organizer and line-up names; `from` and `to` still narrow the dates when given.
+
 ## Deploy
 Production runs on `cyrene` at https://event-calendar.miraestudio.id from `~/apps/event-calendar` (a clone of this repo). `compose.yaml` runs backend, scraper and web; web binds `127.0.0.1:3105`, which the host cloudflared tunnel serves. The ingest endpoint is not exposed publicly.
 

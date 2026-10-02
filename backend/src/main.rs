@@ -104,6 +104,8 @@ use axum::extract::Query;
 struct EventParams {
     from: Option<String>,
     to: Option<String>,
+    /// Text to find in an event's title, venue, city, organizer or line-up.
+    q: Option<String>,
 }
 
 async fn get_events(
@@ -112,17 +114,32 @@ async fn get_events(
 ) -> Result<Json<Vec<EventView>>, (StatusCode, String)> {
     let from_date = params.from.unwrap_or_else(|| "1970-01-01".to_string());
     let to_date = params.to.unwrap_or_else(|| "9999-12-31".to_string());
+    // LIKE pattern with the user's own % and _ escaped; no query matches every title.
+    let pattern = format!(
+        "%{}%",
+        params.q.unwrap_or_default().trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    );
 
     let events = sqlx::query_as!(
         Event,
         r#"
         SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date, description, organizer
         FROM events
-        WHERE start_date < ? AND end_date >= ?
+        WHERE start_date < ?1 AND end_date >= ?2
+          AND (title LIKE ?3 ESCAPE '\'
+            OR location_name LIKE ?3 ESCAPE '\'
+            OR location_city LIKE ?3 ESCAPE '\'
+            OR organizer LIKE ?3 ESCAPE '\'
+            OR id IN (
+                SELECT ea.event_id FROM event_artists ea
+                JOIN artists a ON a.id = ea.artist_id
+                WHERE a.name LIKE ?3 ESCAPE '\'
+            ))
         ORDER BY start_date ASC
         "#,
         to_date,
-        from_date
+        from_date,
+        pattern
     )
     .fetch_all(&state.db)
     .await

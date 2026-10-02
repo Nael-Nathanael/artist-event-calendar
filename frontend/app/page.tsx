@@ -40,6 +40,22 @@ function dateRange(e: Event) {
   return start === end ? start : `${start} – ${end}`;
 }
 
+const monthYear = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TZ,
+  month: "long",
+  year: "numeric",
+});
+
+// Search results under the month they start in, in the order they arrive.
+function byMonth(events: Event[]): [string, Event[]][] {
+  const groups = new Map<string, Event[]>();
+  for (const e of events) {
+    const m = monthYear.format(new Date(e.start_date));
+    groups.set(m, [...(groups.get(m) ?? []), e]);
+  }
+  return [...groups];
+}
+
 const clock = new Intl.DateTimeFormat("en-GB", {
   timeZone: TZ,
   hour: "2-digit",
@@ -232,6 +248,12 @@ export default function Home() {
   const [perCell, setPerCell] = useState(3);
   const [view, setView] = useState<"month" | "timeline">("month");
   const [hidden, setHidden] = useState<string[]>([]);
+  // Search text; null while the search bar is closed.
+  const [query, setQuery] = useState<string | null>(null);
+  // Matches across every month; null until a search has answered.
+  const [results, setResults] = useState<Event[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLElement>(null);
@@ -255,6 +277,7 @@ export default function Home() {
     if (q.get("view") === "timeline") setView("timeline");
     const hide = q.get("hide")?.split(",") ?? [];
     setHidden(GROUPS.map((g) => g.id).filter((id) => hide.includes(id)));
+    setQuery(q.get("q"));
     const onScroll = () => setScrolled(window.scrollY > 0);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -305,7 +328,38 @@ export default function Home() {
     if (shared) setSelected(shared);
   }, [events, loading, pendingEvent]);
 
-  // Keep the URL shareable: the view, the visible month and the open event.
+  // Search every month, once typing pauses.
+  useEffect(() => {
+    const text = query?.trim();
+    setResults(null);
+    setSearchFailed(false);
+    if (!text) {
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/events?q=${encodeURIComponent(text)}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        setResults(await res.json());
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        console.error(err);
+        setSearchFailed(true);
+      }
+      setSearching(false);
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
+
+  // Keep the URL shareable: the view, the visible month, the search and the open event.
   useEffect(() => {
     if (!currentDate) return;
     const q = new URLSearchParams(window.location.search);
@@ -313,12 +367,14 @@ export default function Home() {
     else q.delete("view");
     if (hidden.length) q.set("hide", hidden.join(","));
     else q.delete("hide");
+    if (query) q.set("q", query);
+    else q.delete("q");
     q.set("year", String(year));
     q.set("month", String(month + 1));
     if (selected) q.set("event", selected.id);
     else if (!pendingEvent) q.delete("event");
     window.history.replaceState(null, "", `?${q}`);
-  }, [currentDate, view, hidden, year, month, selected, pendingEvent]);
+  }, [currentDate, view, hidden, query, year, month, selected, pendingEvent]);
 
   // Open the timeline scrolled to today when today is in the shown month.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the timeline appears, changes month, or fills in
@@ -372,7 +428,43 @@ export default function Home() {
         <h1 className="title-large hidden shrink-0 expanded:mr-4 expanded:block">
           Artist Event Calendar
         </h1>
-        {currentDate && (
+        {currentDate && query !== null && (
+          <search className="flex h-12 min-w-0 flex-1 items-center rounded-full bg-surface-container-high px-1 text-on-surface-variant">
+            <button
+              type="button"
+              aria-label="Close search"
+              onClick={() => setQuery(null)}
+              className={iconButton}
+            >
+              <Icon name="arrow_back" />
+            </button>
+            <input
+              // biome-ignore lint/a11y/noAutofocus: the field appears because the user asked to search
+              autoFocus
+              type="text"
+              enterKeyHint="search"
+              value={query}
+              onChange={(ev) => setQuery(ev.target.value)}
+              onKeyDown={(ev) => {
+                if (ev.key === "Escape") setQuery(null);
+              }}
+              placeholder="Search events, venues, artists"
+              aria-label="Search events"
+              className="min-w-0 flex-1 bg-transparent px-2 body-large text-on-surface outline-none placeholder:text-on-surface-variant"
+            />
+            {query && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setQuery("")}
+                className={iconButton}
+              >
+                <Icon name="close" />
+              </button>
+            )}
+          </search>
+        )}
+        {currentDate && query === null && (
           <>
             <button
               type="button"
@@ -410,7 +502,15 @@ export default function Home() {
               </span>
               <span className="hidden medium:inline">{monthLabel}</span>
             </h2>
-            <div className="ml-auto flex h-10 shrink-0 overflow-hidden rounded-full border border-outline">
+            <button
+              type="button"
+              aria-label="Search events"
+              onClick={() => setQuery("")}
+              className={`${iconButton} ml-auto`}
+            >
+              <Icon name="search" />
+            </button>
+            <div className="flex h-10 shrink-0 overflow-hidden rounded-full border border-outline">
               {(
                 [
                   ["month", "Month", "calendar_view_month"],
@@ -432,7 +532,7 @@ export default function Home() {
             </div>
           </>
         )}
-        {loading && (
+        {(query === null ? loading : searching) && (
           <div
             role="progressbar"
             aria-label="Loading events"
@@ -441,8 +541,70 @@ export default function Home() {
         )}
       </header>
 
+      {query !== null && (
+        <main className="mx-auto w-full max-w-3xl px-4 pb-6 expanded:min-h-0 expanded:flex-1 expanded:overflow-y-auto">
+          {searchFailed ? (
+            <p className="rounded-md bg-surface-container-high px-4 py-3 body-medium">
+              Couldn&apos;t search events.
+            </p>
+          ) : !results?.length ? (
+            <div className="flex flex-col items-center gap-2 py-16 text-center text-on-surface-variant">
+              <Icon name={results ? "event_busy" : "search"} size={48} />
+              <p className="body-large">
+                {results
+                  ? `No events match “${query.trim()}”`
+                  : "Search by event, venue, city, organizer or artist"}
+              </p>
+            </div>
+          ) : (
+            <>
+              <p
+                className="pb-2 label-large text-on-surface-variant"
+                aria-live="polite"
+              >
+                {results.length} {results.length === 1 ? "event" : "events"}
+              </p>
+              {byMonth(results).map(([label, list]) => (
+                <section key={label} aria-label={label}>
+                  <h3 className="px-4 pb-1 pt-3 title-small text-on-surface-variant">
+                    {label}
+                  </h3>
+                  <ul className="overflow-hidden rounded-lg bg-surface-container-low">
+                    {list.map((e) => (
+                      <li key={e.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelected(e)}
+                          className="state-layer w-full px-4 py-3 text-left"
+                        >
+                          <span className="block body-large line-clamp-2">
+                            {e.title}
+                          </span>
+                          <span className="block body-medium text-on-surface-variant">
+                            {[
+                              dateRange(e),
+                              place(e),
+                              ...e.artists.map((a) => a.name),
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </>
+          )}
+        </main>
+      )}
+
       {currentDate && (
-        <main className="mx-auto w-full max-w-7xl px-4 pb-6 expanded:flex expanded:min-h-0 expanded:flex-1 expanded:flex-col expanded:px-6 expanded:pb-4">
+        <main
+          hidden={query !== null}
+          className="mx-auto w-full max-w-7xl px-4 pb-6 expanded:flex expanded:min-h-0 expanded:flex-1 expanded:flex-col expanded:px-6 expanded:pb-4"
+        >
           {/* Filter chips: every group starts on; tapping one hides its events. */}
           <fieldset className="-mx-4 flex min-w-0 shrink-0 gap-2 overflow-x-auto px-4 pb-3 [scrollbar-width:none] expanded:-mx-6 expanded:px-6">
             <legend className="sr-only">Filter by category</legend>

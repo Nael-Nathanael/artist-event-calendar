@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date, description, organizer\n        FROM events\n        WHERE start_date < ? AND end_date >= ?\n        ORDER BY start_date ASC\n        ",
+  "query": "\n        SELECT id, series_id, title, category, location_name, location_city, floorplan_image_url, banner_image_url, official_url, start_date, end_date, description, organizer\n        FROM events\n        WHERE start_date < ?1 AND end_date >= ?2\n          AND (title LIKE ?3 ESCAPE '\\'\n            OR location_name LIKE ?3 ESCAPE '\\'\n            OR location_city LIKE ?3 ESCAPE '\\'\n            OR organizer LIKE ?3 ESCAPE '\\'\n            OR id IN (\n                SELECT ea.event_id FROM event_artists ea\n                JOIN artists a ON a.id = ea.artist_id\n                WHERE a.name LIKE ?3 ESCAPE '\\'\n            ))\n        ORDER BY start_date ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -70,7 +70,7 @@
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 3
     },
     "nullable": [
       false,
@@ -88,5 +88,5 @@
       true
     ]
   },
-  "hash": "ea3d0ef3750ef5ab4d57349ba9fd3c195e302ee1efcb16489c81dab58bcb692b"
+  "hash": "00501e01f2260f50937b51689084080d20aa70a54d7ce49b9dc743b40cac7b4f"
 }
