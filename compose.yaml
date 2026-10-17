@@ -38,10 +38,12 @@ services:
     cpus: 0.5
 
   # Headless Chromium for pages plain HTTP can't read (Instagram without a login).
-  # Internal only: no published port.
+  # Published so other tailnet tools (pameran-indonesia-event-scrapper) can share it.
   flaresolverr:
     <<: *limits
     image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
+    ports:
+      - 8191:8191
     environment:
       LOG_LEVEL: info
       TZ: Asia/Jakarta
