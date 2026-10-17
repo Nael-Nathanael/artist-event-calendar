@@ -41,7 +41,7 @@ services:
   # Published so other tailnet tools (pameran-indonesia-event-scrapper) can share it.
   flaresolverr:
     <<: *limits
-    image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
+    image: ghcr.io/flaresolverr/flaresolverr:v3.5.2
     ports:
       - 8191:8191
     environment:
