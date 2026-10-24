@@ -6,13 +6,14 @@ const isDev = process.env.NODE_ENV === "development";
 
 // No nonces: they would force dynamic rendering and drop ISR, so Next's inline scripts need 'unsafe-inline'.
 // Banner images come from many scraped hosts, hence img-src https:.
+// cloudflareinsights: the Web Analytics beacon Cloudflare injects at the edge.
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' https: data: blob:",
   "font-src 'self'",
-  "connect-src 'self'",
+  "connect-src 'self' https://cloudflareinsights.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
