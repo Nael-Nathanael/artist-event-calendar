@@ -4,7 +4,7 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY . .
 # Rewrites are serialized at build time, so the backend address is baked in here.
-ARG BACKEND_URL
+ARG BACKEND_URL=http://backend:8081
 ENV BACKEND_URL=$BACKEND_URL NEXT_TELEMETRY_DISABLED=1
 RUN bun run build
 

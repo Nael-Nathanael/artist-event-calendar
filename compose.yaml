@@ -1,5 +1,7 @@
 # event-calendar.miraestudio.id on cyrene, via the host cloudflared tunnel -> 127.0.0.1:3105.
-# Deploy: `git pull && docker compose up -d --build`. API_KEY lives in .env.
+# Images built on the laptop with `cyrene-build` from this repo (backend, scraper, frontend subdirs);
+# pin the commit in .env (IMAGE_TAG). API_KEY lives in .env too.
+# Deploy: edit IMAGE_TAG, `docker compose pull && docker compose up -d`.
 name: event-calendar
 
 x-limits: &limits
@@ -12,7 +14,7 @@ x-limits: &limits
 services:
   backend:
     <<: *limits
-    build: ./backend
+    image: ghcr.io/nael-nathanael/event-calendar-backend:${IMAGE_TAG:?set IMAGE_TAG in .env}
     user: "1000:1000"
     environment:
       DATABASE_URL: sqlite:///data/events.db
@@ -26,7 +28,7 @@ services:
 
   scraper:
     <<: *limits
-    build: ./scraper
+    image: ghcr.io/nael-nathanael/event-calendar-scraper:${IMAGE_TAG:?set IMAGE_TAG in .env}
     depends_on: [backend, flaresolverr]
     environment:
       BACKEND_URL: http://backend:8081
@@ -38,12 +40,14 @@ services:
     cpus: 0.5
 
   # Headless Chromium for pages plain HTTP can't read (Instagram without a login).
-  # Published so other tailnet tools (pameran-indonesia-event-scrapper) can share it.
+  # Published on cyrene's tailnet address only, so other tailnet tools (pameran-indonesia-event-scrapper) share it.
+  # Upstream's Dockerfile rebuilt with `cyrene-build` from FlareSolverr master: the v3.5.2 release image ships an
+  # old Chromium with critical CVEs.
   flaresolverr:
     <<: *limits
-    image: ghcr.io/flaresolverr/flaresolverr:v3.5.2
+    image: ghcr.io/nael-nathanael/flaresolverr:cc2224b21e31c09a713eb25690a8e8dcdf50d8d8
     ports:
-      - 8191:8191
+      - 100.72.128.107:8191:8191
     environment:
       LOG_LEVEL: info
       TZ: Asia/Jakarta
@@ -54,10 +58,7 @@ services:
 
   web:
     <<: *limits
-    build:
-      context: ./frontend
-      args:
-        BACKEND_URL: http://backend:8081
+    image: ghcr.io/nael-nathanael/event-calendar-web:${IMAGE_TAG:?set IMAGE_TAG in .env}
     depends_on: [backend]
     ports:
       - 127.0.0.1:3105:3000

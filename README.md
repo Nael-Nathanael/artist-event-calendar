@@ -48,11 +48,17 @@ The frontend will run on `http://localhost:3000`. It proxies `/api/events` to `B
 The search button in the app bar looks across every month. `GET /api/events?q=text` matches the text, case-insensitively, against an event's title, venue, city, organizer and line-up names; `from` and `to` still narrow the dates when given.
 
 ## Deploy
-Production runs on `cyrene` at https://event-calendar.miraestudio.id from `~/apps/event-calendar` (a clone of this repo). `compose.yaml` runs backend, scraper and web; web binds `127.0.0.1:3105`, which the host cloudflared tunnel serves. The ingest endpoint is not exposed publicly.
+Production runs on `cyrene` at https://event-calendar.miraestudio.id from `~/apps/event-calendar` (a clone of this repo). `compose.yaml` runs backend, scraper and web; web binds `127.0.0.1:3105`, which the host cloudflared tunnel serves. The ingest endpoint is not exposed publicly. FlareSolverr is published on cyrene's tailnet address only (`100.72.128.107:8191`).
+
+Nothing is built on cyrene. Build the three images on the laptop from a pushed commit, then pin that commit:
 
 ```bash
-cd ~/apps/event-calendar
-git pull && docker compose up -d --build   # API_KEY lives in .env
+for s in backend scraper frontend; do
+  name=$s; [ $s = frontend ] && name=web
+  flock /tmp/cyrene-build.lock cyrene-build ~/artist-event-calendar <branch> ghcr.io/nael-nathanael/event-calendar-$name $s
+done
+# on cyrene, in ~/apps/event-calendar: set IMAGE_TAG=<full sha> in .env (API_KEY lives there too)
+git pull && docker compose pull && docker compose up -d
 ```
 
 ## Scrapers
